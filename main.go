@@ -107,7 +107,7 @@ func parseLink(link string) (*models.ParsedLink, error) {
 
 func generateXrayConfig(parsedLink *models.ParsedLink, templateDir, outputDir string) error {
 
-	templatePath := filepath.Join(templateDir, fmt.Sprintf("%s.json.j2", parsedLink.Protocol))
+	templatePath := filepath.Join(templateDir, fmt.Sprintf("%s.json.tmpl", parsedLink.Protocol))
 	tmpl, err := template.ParseFiles(templatePath)
 	if err != nil {
 		return fmt.Errorf("error loading template: %v", err)
