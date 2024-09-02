@@ -86,6 +86,10 @@ An example configuration file is provided as config.json.example in the reposito
 
 Simply rename config.json.example to config.json and adjust the values to fit your requirements.
 
+## Plans
+
+- Prometheus metric endpoint
+
 ## Contributing
 
 Since this is a beta version, there is plenty of room for improvement. If you encounter issues or have suggestions, feel free to open an issue or submit a pull request.
