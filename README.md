@@ -1,6 +1,6 @@
 # Xray Checker (Beta Version)
 
----
+[English](https://github.com/kutovoys/xray-checker) | [Russian](https://github.com/kutovoys/xray-checker/blob/main/README_RU.md)
 
 ## Overview
 
