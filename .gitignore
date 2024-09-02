@@ -2,3 +2,4 @@ all/
 configs/*
 build/
 xray-checker
+config.json
