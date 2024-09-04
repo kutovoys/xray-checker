@@ -74,6 +74,7 @@ func parseLink(link string) (*models.ParsedLink, error) {
 		parsed.Security = queryParams.Get("security")
 		parsed.Type = queryParams.Get("type")
 		parsed.HeaderType = queryParams.Get("headerType")
+		parsed.Flow = queryParams.Get("flow")
 		parsed.Path = queryParams.Get("path")
 		parsed.Host = queryParams.Get("host")
 		parsed.SNI = queryParams.Get("sni")
