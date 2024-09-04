@@ -1,18 +1,15 @@
 package main
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
-	"text/template"
 	"time"
 	"xray-checker/models"
+	uptimekuma "xray-checker/providers/uptime-kuma"
 	"xray-checker/utils"
 
 	"github.com/go-co-op/gocron"
@@ -42,7 +39,7 @@ func loadProgramConfig(configPath string) (models.Provider, error) {
 		return nil, fmt.Errorf("error determining provider type: %v", err)
 	}
 
-	provider, err := utils.ProviderFactory(providerType.Name, rawProvider)
+	provider, err := uptimekuma.ProviderFactory(providerType.Name, rawProvider)
 	if err != nil {
 		return nil, err
 	}
@@ -50,87 +47,8 @@ func loadProgramConfig(configPath string) (models.Provider, error) {
 	return provider, nil
 }
 
-func parseLink(link string) (*models.ParsedLink, error) {
-	u, err := url.Parse(link)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing link: %v", err)
-	}
-
-	protocol := strings.Split(u.Scheme, "://")[0]
-	userInfo := u.User
-	hostPort := strings.Split(u.Host, ":")
-	queryParams := u.Query()
-
-	parsed := &models.ParsedLink{
-		Protocol: protocol,
-		Server:   hostPort[0],
-		Port:     hostPort[1],
-		Name:     u.Fragment,
-	}
-
-	switch protocol {
-	case "vless":
-		parsed.UID = userInfo.Username()
-		parsed.Security = queryParams.Get("security")
-		parsed.Type = queryParams.Get("type")
-		parsed.HeaderType = queryParams.Get("headerType")
-		parsed.Flow = queryParams.Get("flow")
-		parsed.Path = queryParams.Get("path")
-		parsed.Host = queryParams.Get("host")
-		parsed.SNI = queryParams.Get("sni")
-		parsed.FP = queryParams.Get("fp")
-		parsed.PBK = queryParams.Get("pbk")
-		parsed.SID = queryParams.Get("sid")
-
-	case "trojan":
-		parsed.UID = userInfo.Username()
-		parsed.Security = queryParams.Get("security")
-		parsed.Type = queryParams.Get("type")
-		parsed.HeaderType = queryParams.Get("headerType")
-		parsed.Path = queryParams.Get("path")
-		parsed.Host = queryParams.Get("host")
-		parsed.SNI = queryParams.Get("sni")
-		parsed.FP = queryParams.Get("fp")
-
-	case "ss":
-		decodedUserInfo, err := base64.StdEncoding.DecodeString(userInfo.Username())
-		if err != nil {
-			return nil, fmt.Errorf("error decoding base64: %v", err)
-		}
-		parts := strings.Split(string(decodedUserInfo), ":")
-		parsed.Method = parts[0]
-		parsed.UID = parts[1]
-		parsed.Protocol = "shadowsocks"
-	}
-
-	return parsed, nil
-}
-
-func generateXrayConfig(parsedLink *models.ParsedLink, templateDir, outputDir string) error {
-
-	templatePath := filepath.Join(templateDir, fmt.Sprintf("%s.json.tmpl", parsedLink.Protocol))
-	tmpl, err := template.ParseFiles(templatePath)
-	if err != nil {
-		return fmt.Errorf("error loading template: %v", err)
-	}
-
-	outputPath := filepath.Join(outputDir, fmt.Sprintf("%s-%s.json", parsedLink.Protocol, parsedLink.Server))
-	outputFile, err := os.Create(outputPath)
-	if err != nil {
-		return fmt.Errorf("error creating xray config: %v", err)
-	}
-	defer outputFile.Close()
-
-	err = tmpl.Execute(outputFile, parsedLink)
-	if err != nil {
-		return fmt.Errorf("error generating xray config: %v", err)
-	}
-
-	return nil
-}
-
-func processConfigFile(configPath string) {
-	logData := models.LogData{ConfigFile: configPath}
+func processConfigFile(configPath string, provider models.Provider) {
+	logData := models.ConnectionData{ConfigFile: configPath}
 
 	configData, err := os.ReadFile(configPath)
 	if err != nil {
@@ -162,6 +80,7 @@ func processConfigFile(configPath string) {
 		return
 	}
 
+	// Запускаем Xray и проверяем VPN IP
 	listen := config.Inbounds[0].Listen
 	port := config.Inbounds[0].Port
 	logData.ProxyAddress = fmt.Sprintf("socks5://%s:%d", listen, port)
@@ -175,6 +94,7 @@ func processConfigFile(configPath string) {
 	defer utils.KillXray(cmd)
 	time.Sleep(2 * time.Second)
 
+	// Ждем и проверяем IP через прокси
 	proxyClient, err := utils.CreateProxyClient(logData.ProxyAddress)
 	if err != nil {
 		logData.Error = fmt.Errorf("error creating proxy client: %v", err)
@@ -189,22 +109,14 @@ func processConfigFile(configPath string) {
 		return
 	}
 
-	if logData.VPNIP != logData.SourceIP {
-		_, err = http.Get(logData.WebhookURL)
-		if err != nil {
-			logData.Error = fmt.Errorf("error sending status: %v", err)
-			logData.Status = "Error"
-		} else {
-			logData.Status = "Success"
-		}
-	} else {
-		logData.Status = "IP addresses match, status not sent"
+	// Отправляем результат провайдеру (Uptime-Kuma или другому)
+	err = provider.ProcessResults(logData)
+	if err != nil {
+		logData.Error = fmt.Errorf("error processing results: %v", err)
 	}
-
-	utils.LogResult(logData)
 }
 
-func scheduleConfigs(configDir string, scheduler *gocron.Scheduler, interval int) {
+func scheduleConfigs(configDir string, scheduler *gocron.Scheduler, interval int, provider models.Provider) {
 	files, err := os.ReadDir(configDir)
 	if err != nil {
 		fmt.Println("error reading directory:", err)
@@ -215,7 +127,7 @@ func scheduleConfigs(configDir string, scheduler *gocron.Scheduler, interval int
 		if filepath.Ext(file.Name()) == ".json" {
 			configPath := filepath.Join(configDir, file.Name())
 			scheduler.Every(interval).Seconds().Do(func() {
-				processConfigFile(configPath)
+				processConfigFile(configPath, provider)
 			})
 		}
 	}
@@ -235,23 +147,25 @@ func main() {
 
 	var wg sync.WaitGroup
 
+	// Загружаем конфигурацию провайдера
 	provider, err := loadProgramConfig(programConfigPath)
 	if err != nil {
 		fmt.Println("error loading program configuration:", err)
 		return
 	}
 
+	// Процесс генерации конфигов для каждого подключения
 	for i, config := range provider.GetConfigs() {
-		parsedLink, err := parseLink(config.Link)
+		parsedLink, err := utils.ParseLink(config.Link)
 		if err != nil {
 			fmt.Println("error parsing link:", err)
 			continue
 		}
 
 		parsedLink.MonitorLink = config.MonitorLink
-		parsedLink.RandomPort = provider.GetProxySrartPort() + i
+		parsedLink.RandomPort = provider.GetProxyStartPort() + i
 
-		err = generateXrayConfig(parsedLink, templateDir, configDir)
+		err = utils.GenerateXrayConfig(parsedLink, templateDir, configDir)
 		if err != nil {
 			fmt.Println("error generating Xray config:", err)
 			continue
@@ -260,9 +174,9 @@ func main() {
 		fmt.Printf("Xray config generated: %s-%s.json\n", parsedLink.Protocol, parsedLink.Server)
 	}
 
+	// Планируем выполнение тестов
 	scheduler := gocron.NewScheduler(time.UTC)
-
-	scheduleConfigs(configDir, scheduler, provider.GetInterval())
+	scheduleConfigs(configDir, scheduler, provider.GetInterval(), provider)
 
 	wg.Add(1)
 	go func() {

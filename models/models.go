@@ -1,39 +1,17 @@
 package models
 
+// Provider interface that all providers must implement
 type Provider interface {
-	GetName() string
-	GetProxySrartPort() int
-	GetInterval() int
-	GetConfigs() []Config
+	GetName() string                     // Returns the provider's name
+	GetProxyStartPort() int              // Returns the starting port for proxies
+	GetInterval() int                    // Returns the interval between checks
+	GetConfigs() []Config                // Returns the provider's connection configurations
+	ProcessResults(ConnectionData) error // Processes the results of the connection tests
 }
 
 type Config struct {
 	Link        string `json:"link"`
 	MonitorLink string `json:"monitorLink"`
-}
-
-// Реализация для UptimeKuma
-type UptimeKuma struct {
-	Name           string   `json:"name"`
-	ProxyStartPort int      `json:"proxyStartPort"`
-	Interval       int      `json:"interval"`
-	Configs        []Config `json:"configs"`
-}
-
-func (u *UptimeKuma) GetName() string {
-	return u.Name
-}
-
-func (u *UptimeKuma) GetProxySrartPort() int {
-	return u.ProxyStartPort
-}
-
-func (u *UptimeKuma) GetInterval() int {
-	return u.Interval
-}
-
-func (u *UptimeKuma) GetConfigs() []Config {
-	return u.Configs
 }
 
 type ParsedLink struct {
@@ -58,22 +36,16 @@ type ParsedLink struct {
 }
 
 type XrayConfig struct {
-	Log      map[string]interface{} `json:"log"`
 	Inbounds []struct {
 		Listen   string `json:"listen"`
 		Port     int    `json:"port"`
 		Protocol string `json:"protocol"`
-		Sniffing struct {
-			Enabled      bool     `json:"enabled"`
-			DestOverride []string `json:"destOverride"`
-			RouteOnly    bool     `json:"routeOnly"`
-		} `json:"sniffing"`
 	} `json:"inbounds"`
 	Outbounds []map[string]interface{} `json:"outbounds"`
 	Webhook   string                   `json:"webhook"`
 }
 
-type LogData struct {
+type ConnectionData struct {
 	ConfigFile   string
 	SourceIP     string
 	VPNIP        string
