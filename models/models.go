@@ -44,6 +44,7 @@ type ParsedLink struct {
 	Security    string
 	Type        string
 	HeaderType  string
+	Flow        string
 	Path        string
 	Host        string
 	SNI         string
