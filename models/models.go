@@ -1,12 +1,12 @@
 package models
 
-// Provider interface that all providers must implement
 type Provider interface {
-	GetName() string                     // Returns the provider's name
-	GetProxyStartPort() int              // Returns the starting port for proxies
-	GetInterval() int                    // Returns the interval between checks
-	GetConfigs() []Config                // Returns the provider's connection configurations
-	ProcessResults(ConnectionData) error // Processes the results of the connection tests
+	GetName() string
+	GetProxyStartPort() int
+	GetInterval() int
+	GetWorkers() int
+	GetConfigs() []Config
+	ProcessResults(ConnectionData) error
 }
 
 type Config struct {

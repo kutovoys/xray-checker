@@ -4,15 +4,14 @@ import (
 	"xray-checker/models"
 )
 
-// Модель UptimeKuma, перенесённая из models.go
 type UptimeKuma struct {
 	Name           string          `json:"name"`
 	ProxyStartPort int             `json:"proxyStartPort"`
 	Interval       int             `json:"interval"`
+	Workers        int             `json:"Workers"`
 	Configs        []models.Config `json:"configs"`
 }
 
-// Реализация методов интерфейса Provider для UptimeKuma
 func (u *UptimeKuma) GetName() string {
 	return u.Name
 }
@@ -23,6 +22,10 @@ func (u *UptimeKuma) GetProxyStartPort() int {
 
 func (u *UptimeKuma) GetInterval() int {
 	return u.Interval
+}
+
+func (u *UptimeKuma) GetWorkers() int {
+	return u.Workers
 }
 
 func (u *UptimeKuma) GetConfigs() []models.Config {
