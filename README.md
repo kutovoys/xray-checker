@@ -66,6 +66,7 @@ An example configuration file is provided as config.json.example in the reposito
     "name": "uptime-kuma",
     "proxyStartPort": 10000,
     "interval": 40,
+    "workers": 3,
     "configs": [
       {
         "link": "vless://uid@server:port?security=security&type=type&headerType=headerType&path=path&host=host&sni=sni&fp=fp&pbk=pbk&sid=#sid",

@@ -2,10 +2,7 @@ module xray-checker
 
 go 1.21
 
-require (
-	github.com/go-co-op/gocron v1.37.0
-	golang.org/x/net v0.28.0
-)
+require github.com/go-co-op/gocron v1.37.0
 
 require (
 	github.com/google/uuid v1.4.0 // indirect

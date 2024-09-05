@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -12,9 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
+	"time"
 	"xray-checker/models"
-
-	"golang.org/x/net/proxy"
 )
 
 func ParseLink(link string) (*models.ParsedLink, error) {
@@ -129,13 +129,13 @@ func CreateProxyClient(proxyAddress string) (*http.Client, error) {
 		return nil, fmt.Errorf("invalid proxy format: %v", err)
 	}
 
-	dialer, err := proxy.FromURL(proxyURL, proxy.Direct)
-	if err != nil {
-		return nil, fmt.Errorf("error creating proxy dialer: %v", err)
-	}
-
 	transport := &http.Transport{
-		Dial: dialer.Dial,
+		Proxy: http.ProxyURL(proxyURL),
+		DialContext: (&net.Dialer{
+			Timeout:   20 * time.Second,
+			KeepAlive: 20 * time.Second,
+			DualStack: false,
+		}).DialContext,
 	}
 
 	client := &http.Client{
@@ -143,6 +143,20 @@ func CreateProxyClient(proxyAddress string) (*http.Client, error) {
 	}
 
 	return client, nil
+}
+
+func GetIPv4Client() *http.Client {
+	transport := &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout:   20 * time.Second,
+			KeepAlive: 20 * time.Second,
+			DualStack: false,
+		}).DialContext,
+	}
+
+	return &http.Client{
+		Transport: transport,
+	}
 }
 
 func LogResult(logData models.ConnectionData) {

@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -72,15 +72,14 @@ func processConfigFile(configPath string, provider models.Provider) {
 		return
 	}
 
-	ipCheckURL := "https://ifconfig.io"
-	logData.SourceIP, err = utils.GetIP(ipCheckURL, &http.Client{})
+	ipCheckURL := "https://api64.ipify.org"
+	logData.SourceIP, err = utils.GetIP(ipCheckURL, utils.GetIPv4Client())
 	if err != nil {
 		logData.Error = fmt.Errorf("error getting source IP: %v", err)
 		utils.LogResult(logData)
 		return
 	}
 
-	// Запускаем Xray и проверяем VPN IP
 	listen := config.Inbounds[0].Listen
 	port := config.Inbounds[0].Port
 	logData.ProxyAddress = fmt.Sprintf("socks5://%s:%d", listen, port)
@@ -92,9 +91,8 @@ func processConfigFile(configPath string, provider models.Provider) {
 		return
 	}
 	defer utils.KillXray(cmd)
-	time.Sleep(5 * time.Second)
+	time.Sleep(4 * time.Second)
 
-	// Ждем и проверяем IP через прокси
 	proxyClient, err := utils.CreateProxyClient(logData.ProxyAddress)
 	if err != nil {
 		logData.Error = fmt.Errorf("error creating proxy client: %v", err)
@@ -109,28 +107,36 @@ func processConfigFile(configPath string, provider models.Provider) {
 		return
 	}
 
-	// Отправляем результат провайдеру (Uptime-Kuma или другому)
 	err = provider.ProcessResults(logData)
 	if err != nil {
 		logData.Error = fmt.Errorf("error processing results: %v", err)
 	}
 }
 
-func scheduleConfigs(configDir string, scheduler *gocron.Scheduler, interval int, provider models.Provider) {
-	files, err := os.ReadDir(configDir)
-	if err != nil {
-		fmt.Println("error reading directory:", err)
-		return
+func worker(id int, jobs <-chan string, provider models.Provider, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for configPath := range jobs {
+		log.Printf("Worker %d processing config: %s\n", id, configPath)
+		processConfigFile(configPath, provider)
 	}
+}
 
-	for _, file := range files {
-		if filepath.Ext(file.Name()) == ".json" {
-			configPath := filepath.Join(configDir, file.Name())
-			scheduler.Every(interval).Seconds().Do(func() {
-				processConfigFile(configPath, provider)
-			})
+func scheduleConfigs(configDir string, scheduler *gocron.Scheduler, provider models.Provider, jobs chan<- string) {
+	scheduler.Every(provider.GetInterval()).Seconds().Do(func() {
+		log.Println("Starting a new check cycle")
+		files, err := os.ReadDir(configDir)
+		if err != nil {
+			fmt.Println("error reading directory:", err)
+			return
 		}
-	}
+
+		for _, file := range files {
+			if filepath.Ext(file.Name()) == ".json" {
+				configPath := filepath.Join(configDir, file.Name())
+				jobs <- configPath
+			}
+		}
+	})
 }
 
 func main() {
@@ -141,20 +147,17 @@ func main() {
 	if _, err := os.Stat(configDir); os.IsNotExist(err) {
 		err := os.Mkdir(configDir, os.ModePerm)
 		if err != nil {
+			fmt.Println("error creating directory:", err)
 			return
 		}
 	}
 
-	var wg sync.WaitGroup
-
-	// Загружаем конфигурацию провайдера
 	provider, err := loadProgramConfig(programConfigPath)
 	if err != nil {
 		fmt.Println("error loading program configuration:", err)
 		return
 	}
 
-	// Процесс генерации конфигов для каждого подключения
 	for i, config := range provider.GetConfigs() {
 		parsedLink, err := utils.ParseLink(config.Link)
 		if err != nil {
@@ -171,18 +174,24 @@ func main() {
 			continue
 		}
 
-		fmt.Printf("Xray config generated: %s-%s.json\n", parsedLink.Protocol, parsedLink.Server)
+		log.Printf("Xray config generated: %s-%s.json\n", parsedLink.Protocol, parsedLink.Server)
 	}
 
-	// Планируем выполнение тестов
 	scheduler := gocron.NewScheduler(time.UTC)
-	scheduleConfigs(configDir, scheduler, provider.GetInterval(), provider)
+	jobs := make(chan string, 10)
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		scheduler.StartBlocking()
-	}()
+	var wg sync.WaitGroup
+	numWorkers := provider.GetWorkers()
+	for w := 1; w <= numWorkers; w++ {
+		wg.Add(1)
+		go worker(w, jobs, provider, &wg)
+	}
+
+	scheduleConfigs(configDir, scheduler, provider, jobs)
+
+	go scheduler.StartBlocking()
 
 	wg.Wait()
+
+	fmt.Println("All checks are done")
 }
