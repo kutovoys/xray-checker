@@ -92,7 +92,7 @@ func processConfigFile(configPath string, provider models.Provider) {
 		return
 	}
 	defer utils.KillXray(cmd)
-	time.Sleep(2 * time.Second)
+	time.Sleep(5 * time.Second)
 
 	// Ждем и проверяем IP через прокси
 	proxyClient, err := utils.CreateProxyClient(logData.ProxyAddress)

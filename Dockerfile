@@ -26,9 +26,9 @@ FROM --platform=${BUILDPLATFORM:-linux/amd64} teddysun/xray:1.8.23
 
 LABEL org.opencontainers.image.source=https://github.com/kutovoys/xray-checker
 
-WORKDIR /
-COPY --from=builder /usr/bin/xray-checker /xray-checker
-COPY ./templates /templates
+WORKDIR /app
+COPY --from=builder /usr/bin/xray-checker /app/xray-checker
+COPY ./templates /app/templates
 # USER nonroot:nonroot
 
-CMD ["/xray-checker"]
+CMD ["/app/xray-checker"]
