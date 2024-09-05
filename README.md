@@ -31,7 +31,7 @@ This tool is still in development, and some features may not be fully implemente
 You can run the Xray Checker using Docker. Make sure you have a valid `config.json` file that contains your connection settings.
 
 ```bash
-docker run --rm -v ./config.json:/config.json kutovoys/xray-checker
+docker run --rm -v ./config.json:/app/config.json kutovoys/xray-checker
 ```
 
 ### Docker Compose
@@ -44,7 +44,7 @@ services:
     image: kutovoys/xray-checker
     container_name: xray-checker
     volumes:
-      - ./config.json:/config.json
+      - ./config.json:/app/config.json
     restart: unless-stopped
 ```
 

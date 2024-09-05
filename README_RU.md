@@ -31,7 +31,7 @@ Xray Checker — это бета-версия инструмента, предн
 Вы можете запустить Xray Checker с помощью Docker. Убедитесь, что у вас есть действительный файл `config.json`, содержащий ваши настройки подключения.
 
 ```bash
-docker run --rm -v ./config.json:/config.json kutovoys/xray-checker
+docker run --rm -v ./config.json:/app/config.json kutovoys/xray-checker
 ```
 
 ### Docker Compose
@@ -44,7 +44,7 @@ services:
     image: kutovoys/xray-checker
     container_name: xray-checker
     volumes:
-      - ./config.json:/config.json
+      - ./config.json:/app/config.json
     restart: unless-stopped
 ```
 
