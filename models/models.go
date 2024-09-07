@@ -5,6 +5,7 @@ type Provider interface {
 	GetProxyStartPort() int
 	GetInterval() int
 	GetWorkers() int
+	GetCheckService() string
 	GetConfigs() []Config
 	ProcessResults(ConnectionData) error
 }

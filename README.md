@@ -67,9 +67,10 @@ An example configuration file is provided as config.json.example in the reposito
     "proxyStartPort": 10000,
     "interval": 40,
     "workers": 3,
+    "checkIpService": "https://ifconfig.io",
     "configs": [
       {
-        "link": "vless://uid@server:port?security=security&type=type&headerType=headerType&path=path&host=host&sni=sni&fp=fp&pbk=pbk&sid=#sid",
+        "link": "vless://uid@server:port?security=security&type=type&headerType=headerType&flow=flow&path=path&host=host&sni=sni&fp=fp&pbk=pbk&sid=sid#name",
         "monitorLink": "https://uptime-kuma-url/api/push/MonitorID?status=up&msg=OK&ping="
       },
       {
@@ -86,6 +87,29 @@ An example configuration file is provided as config.json.example in the reposito
 ```
 
 Simply rename config.json.example to config.json and adjust the values to fit your requirements.
+
+### Parameter Descriptions
+
+#### provider (object):
+
+This section defines the core provider information and testing parameters.
+
+- **name**: The name of the monitoring provider. In this example, it’s "uptime-kuma", which means integration with the Uptime Kuma monitoring system.
+- **proxyStartPort**: The starting port used for proxies. This defines the first port for Xray testing. Each subsequent config will use the next port. For example, if 10000 is set, the first test will use port 10000, the second 10001, and so on.
+- **interval**: The testing interval in seconds. Defines how often the application will run connection tests for all configurations. In this example, it’s set to 40 seconds.
+- **workers**: The number of concurrent workers to process configuration tests. Here, 3 is specified, meaning up to 3 configurations can be tested simultaneously.
+- **checkIpService**: The URL of the service used to check the external IP address. In the example, https://ifconfig.io is used, which returns your current IP address. This service is called to get the source IP before and after testing through the proxy.
+- **configs**: An array of configuration objects. Each object describes the parameters for testing a specific connection.
+
+#### Inside configs (array of objects):
+
+Each configuration contains the information about the connection to be tested.
+
+- **link**: The connection link containing protocol and connection details:
+  - **vless://**, **trojan://**, or **ss://** — the protocol used for the connection.
+  - **uid@server:port** — UID (or password) for authentication, server address, and port.
+  - **URL parameters** (e.g., security, type, sni, fp, pbk, sid) specify additional connection settings depending on the protocol.
+- **monitorLink**: The URL to send status updates to Uptime Kuma.
 
 ## Plans
 
