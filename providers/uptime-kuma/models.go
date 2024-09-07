@@ -8,7 +8,8 @@ type UptimeKuma struct {
 	Name           string          `json:"name"`
 	ProxyStartPort int             `json:"proxyStartPort"`
 	Interval       int             `json:"interval"`
-	Workers        int             `json:"Workers"`
+	Workers        int             `json:"workers"`
+	CheckIpService string          `json:"checkIpService"`
 	Configs        []models.Config `json:"configs"`
 }
 
@@ -26,6 +27,10 @@ func (u *UptimeKuma) GetInterval() int {
 
 func (u *UptimeKuma) GetWorkers() int {
 	return u.Workers
+}
+
+func (u *UptimeKuma) GetCheckService() string {
+	return u.CheckIpService
 }
 
 func (u *UptimeKuma) GetConfigs() []models.Config {

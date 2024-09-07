@@ -72,8 +72,7 @@ func processConfigFile(configPath string, provider models.Provider) {
 		return
 	}
 
-	ipCheckURL := "https://api64.ipify.org"
-	logData.SourceIP, err = utils.GetIP(ipCheckURL, utils.GetIPv4Client())
+	logData.SourceIP, err = utils.GetIP(provider.GetCheckService(), utils.GetIPv4Client())
 	if err != nil {
 		logData.Error = fmt.Errorf("error getting source IP: %v", err)
 		utils.LogResult(logData)
@@ -100,7 +99,7 @@ func processConfigFile(configPath string, provider models.Provider) {
 		return
 	}
 
-	logData.VPNIP, err = utils.GetIP(ipCheckURL, proxyClient)
+	logData.VPNIP, err = utils.GetIP(provider.GetCheckService(), proxyClient)
 	if err != nil {
 		logData.Error = fmt.Errorf("error getting VPN IP through proxy: %v", err)
 		utils.LogResult(logData)
