@@ -8,7 +8,6 @@ import (
 	"xray-checker/utils"
 )
 
-// Фабрика для создания UptimeKuma провайдера
 func ProviderFactory(providerType string, data json.RawMessage) (models.Provider, error) {
 	switch providerType {
 	case "uptime-kuma":
@@ -23,9 +22,7 @@ func ProviderFactory(providerType string, data json.RawMessage) (models.Provider
 	}
 }
 
-// Логика для отправки результатов в Uptime-Kuma
 func (u *UptimeKuma) ProcessResults(logData models.ConnectionData) error {
-	// Проверяем, если IP-адреса отличаются, отправляем данные в Uptime Kuma
 	if logData.VPNIP != logData.SourceIP {
 		_, err := http.Get(logData.WebhookURL)
 		if err != nil {
@@ -38,7 +35,6 @@ func (u *UptimeKuma) ProcessResults(logData models.ConnectionData) error {
 		logData.Status = "IP addresses match, status not sent"
 	}
 
-	// Логируем результаты
 	utils.LogResult(logData)
 
 	return logData.Error

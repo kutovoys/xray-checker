@@ -3,9 +3,11 @@
     "name": "uptime-kuma",
     "proxyStartPort": 10000,
     "interval": 40,
+    "workers": 3,
+    "checkIpService": "https://ifconfig.io",
     "configs": [
       {
-        "link": "vless://uid@server:port?security=security&type=type&headerType=headerType&path=path&host=host&sni=sni&fp=fp&pbk=pbk&sid=#sid",
+        "link": "vless://uid@server:port?security=security&type=type&headerType=headerType&flow=flow&path=path&host=host&sni=sni&fp=fp&pbk=pbk&sid=sid#name",
         "monitorLink": "https://uptime-kuma-url/api/push/MonitorID?status=up&msg=OK&ping="
       },
       {
