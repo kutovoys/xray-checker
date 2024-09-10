@@ -120,7 +120,10 @@ func RunXray(configPath string) (*exec.Cmd, error) {
 }
 
 func KillXray(cmd *exec.Cmd) error {
-	return cmd.Process.Kill()
+	if err := cmd.Process.Kill(); err != nil {
+		return err
+	}
+	return cmd.Wait()
 }
 
 func CreateProxyClient(proxyAddress string) (*http.Client, error) {
