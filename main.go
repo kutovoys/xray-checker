@@ -89,7 +89,9 @@ func processConfigFile(configPath string, provider models.Provider) {
 		utils.LogResult(logData)
 		return
 	}
+
 	defer utils.KillXray(cmd)
+
 	time.Sleep(4 * time.Second)
 
 	proxyClient, err := utils.CreateProxyClient(logData.ProxyAddress)
