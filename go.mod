@@ -51,13 +51,13 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/mock v0.4.0 // indirect
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba // indirect
-	golang.org/x/crypto v0.31.0 // indirect
+	golang.org/x/crypto v0.35.0 // indirect
 	golang.org/x/exp v0.0.0-20240531132922-fd00a4e0eefc // indirect
 	golang.org/x/mod v0.22.0 // indirect
-	golang.org/x/net v0.33.0 // indirect
-	golang.org/x/sync v0.10.0 // indirect
-	golang.org/x/sys v0.28.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/net v0.36.0 // indirect
+	golang.org/x/sync v0.11.0 // indirect
+	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/text v0.22.0 // indirect
 	golang.org/x/time v0.8.0 // indirect
 	golang.org/x/tools v0.28.0 // indirect
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
