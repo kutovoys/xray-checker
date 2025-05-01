@@ -123,7 +123,7 @@ func ParseVLESSConfig(u *url.URL) (*models.ProxyConfig, error) {
 
 func ParseVMessConfig(u *url.URL) (*models.ProxyConfig, error) {
 	vmessStr := strings.TrimPrefix(u.String(), "vmess://")
-	decoded, err := base64.StdEncoding.DecodeString(vmessStr)
+	decoded, err := base64.RawStdEncoding.DecodeString(vmessStr)
 	if err != nil {
 		decoded, err = base64.RawURLEncoding.DecodeString(vmessStr)
 		if err != nil {
@@ -291,9 +291,9 @@ func ParseShadowsocksConfig(u *url.URL) (*models.ProxyConfig, error) {
 		Settings: make(map[string]string),
 	}
 
-	methodPass, err := base64.URLEncoding.DecodeString(u.User.String())
+	methodPass, err := base64.RawURLEncoding.DecodeString(u.User.String())
 	if err != nil {
-		methodPass, err = base64.StdEncoding.DecodeString(u.User.String())
+		methodPass, err = base64.RawStdEncoding.DecodeString(u.User.String())
 		if err != nil {
 			return nil, fmt.Errorf("error decoding method and password: %v", err)
 		}

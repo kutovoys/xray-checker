@@ -73,9 +73,9 @@ func readFromURL(url string) ([]*models.ProxyConfig, error) {
 
 // readFromBase64 декодирует base64 строку и парсит содержимое
 func readFromBase64(encodedData string) ([]*models.ProxyConfig, error) {
-	decoded, err := base64.StdEncoding.DecodeString(encodedData)
+	decoded, err := base64.RawStdEncoding.DecodeString(encodedData)
 	if err != nil {
-		decoded, err = base64.URLEncoding.DecodeString(encodedData)
+		decoded, err = base64.RawURLEncoding.DecodeString(encodedData)
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode base64: %v", err)
 		}
@@ -407,7 +407,7 @@ func ParseSubscriptionURL(subscriptionURL string) ([]string, error) {
 	}
 
 	// Пробуем декодировать как base64
-	decoded, err := base64.StdEncoding.DecodeString(string(body))
+	decoded, err := base64.RawStdEncoding.DecodeString(string(body))
 	if err != nil {
 		// Если не base64, пробуем как обычный текст
 		return filterEmptyLinks(strings.Split(string(body), "\n")), nil
