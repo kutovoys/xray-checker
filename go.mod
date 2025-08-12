@@ -5,7 +5,7 @@ go 1.24
 toolchain go1.24.2
 
 require (
-	github.com/alecthomas/kong v1.11.0
+	github.com/alecthomas/kong v1.12.1
 	github.com/go-co-op/gocron v1.37.0
 	github.com/prometheus/client_golang v1.22.0
 	github.com/prometheus/common v0.64.0
