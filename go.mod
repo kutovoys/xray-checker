@@ -38,7 +38,7 @@ require (
 	github.com/prometheus/procfs v0.16.0 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.57.1 // indirect
-	github.com/refraction-networking/utls v1.8.1 // indirect
+	github.com/refraction-networking/utls v1.8.2 // indirect
 	github.com/riobard/go-bloom v0.0.0-20200614022211-cdc8013cb5b3 // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/sagernet/sing v0.6.6 // indirect
