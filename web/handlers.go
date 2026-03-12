@@ -166,7 +166,7 @@ func RegisterConfigEndpoints(proxies []*models.ProxyConfig, proxyChecker *checke
 		endpoints = append(endpoints, EndpointInfo{
 			Name:       proxy.Name,
 			ServerInfo: fmt.Sprintf("%s:%d", proxy.Server, proxy.Port),
-			PaidUntil:  GetPaidUntilForProxyName(paidUntilByServer, proxy.Name),
+			PaidUntil:  paidUntilByServer[proxy.Name],
 			URL:        endpoint,
 			ProxyPort:  startPort + proxy.Index,
 			Index:      proxy.Index,

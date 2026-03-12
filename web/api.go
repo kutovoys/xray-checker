@@ -99,7 +99,7 @@ func toProxyInfo(proxy *models.ProxyConfig, online bool, latency time.Duration, 
 		Port:      proxy.Port,
 		Protocol:  proxy.Protocol,
 		ProxyPort: startPort + proxy.Index,
-		PaidUntil: GetPaidUntilForProxyName(paidUntilByServer, proxy.Name),
+		PaidUntil: paidUntilByServer[proxy.Name],
 		Online:    online,
 		LatencyMs: latency.Milliseconds(),
 	}
@@ -123,7 +123,7 @@ func APIPublicProxiesHandler(proxyChecker *checker.ProxyChecker) http.HandlerFun
 			result = append(result, PublicProxyInfo{
 				StableID:  proxy.StableID,
 				Name:      proxy.Name,
-				PaidUntil: GetPaidUntilForProxyName(paidUntilByServer, proxy.Name),
+				PaidUntil: paidUntilByServer[proxy.Name],
 				Online:    status,
 				LatencyMs: latency.Milliseconds(),
 			})

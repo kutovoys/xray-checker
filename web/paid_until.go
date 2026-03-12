@@ -1,9 +1,13 @@
 package web
 
+<<<<<<< codex/add-expiration-date-to-server-info-jekem3
 import (
 	"strings"
 	"unicode"
 )
+=======
+import "strings"
+>>>>>>> main
 
 func ParseServerPaidUntil(raw string) map[string]string {
 	result := make(map[string]string)
@@ -19,7 +23,11 @@ func ParseServerPaidUntil(raw string) map[string]string {
 			continue
 		}
 
+<<<<<<< codex/add-expiration-date-to-server-info-jekem3
 		name := normalizeServerName(parts[0])
+=======
+		name := strings.TrimSpace(parts[0])
+>>>>>>> main
 		date := strings.TrimSpace(parts[1])
 		if name == "" || date == "" {
 			continue
@@ -30,6 +38,7 @@ func ParseServerPaidUntil(raw string) map[string]string {
 
 	return result
 }
+<<<<<<< codex/add-expiration-date-to-server-info-jekem3
 
 func GetPaidUntilForProxyName(paidUntilByServer map[string]string, proxyName string) string {
 	return paidUntilByServer[normalizeServerName(proxyName)]
@@ -48,3 +57,5 @@ func normalizeServerName(name string) string {
 
 	return strings.Join(strings.Fields(cleaned), " ")
 }
+=======
+>>>>>>> main
