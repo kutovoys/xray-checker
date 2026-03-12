@@ -21,3 +21,15 @@ func TestParseServerPaidUntil(t *testing.T) {
 		t.Fatalf("unexpected empty value")
 	}
 }
+<<<<<<< codex/add-expiration-date-to-server-info-jekem3
+
+func TestGetPaidUntilForProxyName_NormalizesHiddenCharactersAndSpacing(t *testing.T) {
+	parsed := ParseServerPaidUntil("🇪🇪 Эстония - 2=31-12-2026")
+
+	proxyNameWithHiddenChars := " 🇪🇪 \u200b Эстония   -   2 "
+	if got := GetPaidUntilForProxyName(parsed, proxyNameWithHiddenChars); got != "31-12-2026" {
+		t.Fatalf("expected paid-until to match normalized proxy name, got %q", got)
+	}
+}
+=======
+>>>>>>> main
