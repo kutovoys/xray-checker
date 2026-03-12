@@ -24,6 +24,7 @@ type ProxyInfo struct {
 	Port      int    `json:"port"`
 	Protocol  string `json:"protocol"`
 	ProxyPort int    `json:"proxyPort"`
+	PaidUntil string `json:"paidUntil,omitempty"`
 	Online    bool   `json:"online"`
 	LatencyMs int64  `json:"latencyMs"`
 }
@@ -31,6 +32,7 @@ type ProxyInfo struct {
 type PublicProxyInfo struct {
 	StableID  string `json:"stableId"`
 	Name      string `json:"name"`
+	PaidUntil string `json:"paidUntil,omitempty"`
 	Online    bool   `json:"online"`
 	LatencyMs int64  `json:"latencyMs"`
 }
@@ -87,7 +89,7 @@ func writeError(w http.ResponseWriter, message string, code int) {
 	})
 }
 
-func toProxyInfo(proxy *models.ProxyConfig, online bool, latency time.Duration, startPort int) ProxyInfo {
+func toProxyInfo(proxy *models.ProxyConfig, online bool, latency time.Duration, startPort int, paidUntilByServer map[string]string) ProxyInfo {
 	return ProxyInfo{
 		Index:     proxy.Index,
 		StableID:  proxy.StableID,
@@ -97,6 +99,7 @@ func toProxyInfo(proxy *models.ProxyConfig, online bool, latency time.Duration, 
 		Port:      proxy.Port,
 		Protocol:  proxy.Protocol,
 		ProxyPort: startPort + proxy.Index,
+		PaidUntil: GetPaidUntilForProxyName(paidUntilByServer, proxy.Name),
 		Online:    online,
 		LatencyMs: latency.Milliseconds(),
 	}
@@ -113,12 +116,14 @@ func APIPublicProxiesHandler(proxyChecker *checker.ProxyChecker) http.HandlerFun
 	return func(w http.ResponseWriter, r *http.Request) {
 		proxies := proxyChecker.GetProxies()
 		result := make([]PublicProxyInfo, 0, len(proxies))
+		paidUntilByServer := ParseServerPaidUntil(config.CLIConfig.Web.ServerPaidUntil)
 
 		for _, proxy := range proxies {
 			status, latency, _ := proxyChecker.GetProxyStatus(proxy.Name)
 			result = append(result, PublicProxyInfo{
 				StableID:  proxy.StableID,
 				Name:      proxy.Name,
+				PaidUntil: GetPaidUntilForProxyName(paidUntilByServer, proxy.Name),
 				Online:    status,
 				LatencyMs: latency.Milliseconds(),
 			})
@@ -139,10 +144,11 @@ func APIProxiesHandler(proxyChecker *checker.ProxyChecker, startPort int) http.H
 	return func(w http.ResponseWriter, r *http.Request) {
 		proxies := proxyChecker.GetProxies()
 		result := make([]ProxyInfo, 0, len(proxies))
+		paidUntilByServer := ParseServerPaidUntil(config.CLIConfig.Web.ServerPaidUntil)
 
 		for _, proxy := range proxies {
 			status, latency, _ := proxyChecker.GetProxyStatus(proxy.Name)
-			result = append(result, toProxyInfo(proxy, status, latency, startPort))
+			result = append(result, toProxyInfo(proxy, status, latency, startPort, paidUntilByServer))
 		}
 
 		writeJSON(w, result)
@@ -180,7 +186,8 @@ func APIProxyHandler(proxyChecker *checker.ProxyChecker, startPort int) http.Han
 		}
 
 		status, latency, _ := proxyChecker.GetProxyStatus(proxy.Name)
-		writeJSON(w, toProxyInfo(proxy, status, latency, startPort))
+		paidUntilByServer := ParseServerPaidUntil(config.CLIConfig.Web.ServerPaidUntil)
+		writeJSON(w, toProxyInfo(proxy, status, latency, startPort, paidUntilByServer))
 	}
 }
 

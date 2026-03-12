@@ -890,6 +890,11 @@
                 ></span
               ></span>
               {{ end }}
+              <span
+                class="text-xs text-muted truncate block"
+                x-show="proxy.paidUntil"
+                x-text="`Оплачено до: ${proxy.paidUntil}`"
+              ></span>
             </div>
 
             <!-- Latency -->
@@ -1067,7 +1072,7 @@
 
           proxies: [
             {{ range $.Endpoints }}
-            { name: "{{.Name}}", stableId: "{{.StableID}}", {{ if $.ShowServerDetails }}serverInfo: "{{.ServerInfo}}", proxyPort: {{.ProxyPort}}, {{ end }}{{ if not $.IsPublic }}url: "{{.URL}}", {{ end }}index: {{.Index}}, status: {{.Status}}, latency: "{{ formatLatency .Latency }}", latencyMs: {{ .Latency.Milliseconds }} },
+            { name: "{{.Name}}", stableId: "{{.StableID}}", paidUntil: "{{.PaidUntil}}", {{ if $.ShowServerDetails }}serverInfo: "{{.ServerInfo}}", proxyPort: {{.ProxyPort}}, {{ end }}{{ if not $.IsPublic }}url: "{{.URL}}", {{ end }}index: {{.Index}}, status: {{.Status}}, latency: "{{ formatLatency .Latency }}", latencyMs: {{ .Latency.Milliseconds }} },
             {{ end }}
           ],
 
@@ -1237,6 +1242,7 @@
                     proxy.status = updated.online;
                     proxy.latencyMs = updated.latencyMs;
                     proxy.latency = updated.latencyMs > 0 ? updated.latencyMs + 'ms' : 'n/a';
+                    proxy.paidUntil = updated.paidUntil || '';
                   }
                 });
                 // Update badge proxy if in badge mode
@@ -1246,6 +1252,7 @@
                     this.badgeProxy.status = updated.online;
                     this.badgeProxy.latencyMs = updated.latencyMs;
                     this.badgeProxy.latency = updated.latencyMs > 0 ? updated.latencyMs + 'ms' : 'n/a';
+                    this.badgeProxy.paidUntil = updated.paidUntil || '';
                   }
                 }
               }
