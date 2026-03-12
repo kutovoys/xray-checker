@@ -61,6 +61,7 @@ type CLI struct {
 		ShowServerDetails bool   `name:"web-show-details" help:"Show server IP addresses and ports in web UI" default:"false" env:"WEB_SHOW_DETAILS"`
 		Public            bool   `name:"web-public" help:"Make dashboard public (requires --metrics-protected)" default:"false" env:"WEB_PUBLIC"`
 		CustomAssetsPath  string `name:"web-custom-assets-path" help:"Path to custom assets directory (logo.svg, favicon.ico, custom.css, index.html)" default:"" env:"WEB_CUSTOM_ASSETS_PATH"`
+		ServerPaidUntil   string `name:"web-server-paid-until" help:"Per-server payment dates in format 'Server Name=DD-MM-YYYY;Server 2=DD-MM-YYYY'" default:"" env:"WEB_SERVER_PAID_UNTIL"`
 	} `embed:"" prefix:""`
 
 	Version  VersionFlag `name:"version" help:"Print version information and quit"`

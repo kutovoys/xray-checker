@@ -21,6 +21,7 @@ var (
 type EndpointInfo struct {
 	Name       string
 	ServerInfo string
+	PaidUntil  string
 	URL        string
 	ProxyPort  int
 	Index      int
@@ -151,6 +152,7 @@ func ConfigStatusHandler(proxyChecker *checker.ProxyChecker) http.HandlerFunc {
 
 func RegisterConfigEndpoints(proxies []*models.ProxyConfig, proxyChecker *checker.ProxyChecker, startPort int) {
 	endpoints := make([]EndpointInfo, 0, len(proxies))
+	paidUntilByServer := ParseServerPaidUntil(config.CLIConfig.Web.ServerPaidUntil)
 
 	for _, proxy := range proxies {
 		if proxy.StableID == "" {
@@ -164,6 +166,7 @@ func RegisterConfigEndpoints(proxies []*models.ProxyConfig, proxyChecker *checke
 		endpoints = append(endpoints, EndpointInfo{
 			Name:       proxy.Name,
 			ServerInfo: fmt.Sprintf("%s:%d", proxy.Server, proxy.Port),
+			PaidUntil:  paidUntilByServer[proxy.Name],
 			URL:        endpoint,
 			ProxyPort:  startPort + proxy.Index,
 			Index:      proxy.Index,
