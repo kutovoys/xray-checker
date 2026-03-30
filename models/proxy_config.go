@@ -78,9 +78,9 @@ func (pc *ProxyConfig) GenerateStableID() string {
 	var idComponents []string
 
 	idComponents = append(idComponents, pc.Protocol)
-
 	idComponents = append(idComponents, pc.Server)
 	idComponents = append(idComponents, fmt.Sprintf("%d", pc.Port))
+	idComponents = append(idComponents, pc.Name)
 
 	switch pc.Protocol {
 	case "vless", "vmess":
@@ -94,6 +94,14 @@ func (pc *ProxyConfig) GenerateStableID() string {
 		if pc.Protocol == "shadowsocks" && pc.Method != "" {
 			idComponents = append(idComponents, pc.Method)
 		}
+	}
+
+	if pc.Flow != "" {
+		idComponents = append(idComponents, pc.Flow)
+	}
+
+	if pc.Encryption != "" {
+		idComponents = append(idComponents, pc.Encryption)
 	}
 
 	if pc.SNI != "" {
@@ -110,6 +118,38 @@ func (pc *ProxyConfig) GenerateStableID() string {
 
 	if pc.PublicKey != "" {
 		idComponents = append(idComponents, pc.PublicKey)
+	}
+
+	if pc.Fingerprint != "" {
+		idComponents = append(idComponents, pc.Fingerprint)
+	}
+
+	if pc.ShortID != "" {
+		idComponents = append(idComponents, pc.ShortID)
+	}
+
+	if pc.HeaderType != "" {
+		idComponents = append(idComponents, pc.HeaderType)
+	}
+
+	if pc.Path != "" {
+		idComponents = append(idComponents, pc.Path)
+	}
+
+	if pc.Host != "" {
+		idComponents = append(idComponents, pc.Host)
+	}
+
+	if pc.Mode != "" {
+		idComponents = append(idComponents, pc.Mode)
+	}
+
+	if pc.ServiceName != "" {
+		idComponents = append(idComponents, pc.ServiceName)
+	}
+
+	if len(pc.ALPN) > 0 {
+		idComponents = append(idComponents, strings.Join(pc.ALPN, ","))
 	}
 
 	idString := strings.Join(idComponents, "|")

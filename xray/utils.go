@@ -1,16 +1,25 @@
 package xray
 
 import (
+	"fmt"
 	"xray-checker/models"
 )
 
 func PrepareProxyConfigs(proxies []*models.ProxyConfig) {
+	seenIDs := make(map[string]int, len(proxies))
+
 	for i := range proxies {
 		proxies[i].Index = i
 
-		if proxies[i].StableID == "" {
-			proxies[i].StableID = proxies[i].GenerateStableID()
+		baseID := proxies[i].GenerateStableID()
+		seenIDs[baseID]++
+
+		if seenIDs[baseID] == 1 {
+			proxies[i].StableID = baseID
+			continue
 		}
+
+		proxies[i].StableID = fmt.Sprintf("%s-%d", baseID, seenIDs[baseID])
 	}
 }
 
@@ -19,31 +28,25 @@ func IsConfigsEqual(old, new []*models.ProxyConfig) bool {
 		return false
 	}
 
-	oldMap := make(map[string]bool)
-	newMap := make(map[string]bool)
+	oldCounts := make(map[string]int, len(old))
+	newCounts := make(map[string]int, len(new))
 
 	for _, cfg := range old {
-		if cfg.StableID == "" {
-			cfg.StableID = cfg.GenerateStableID()
-		}
-		oldMap[cfg.StableID] = true
+		oldCounts[cfg.GenerateStableID()]++
 	}
 
 	for _, cfg := range new {
-		if cfg.StableID == "" {
-			cfg.StableID = cfg.GenerateStableID()
-		}
-		newMap[cfg.StableID] = true
+		newCounts[cfg.GenerateStableID()]++
 	}
 
-	for id := range oldMap {
-		if !newMap[id] {
+	for id, count := range oldCounts {
+		if newCounts[id] != count {
 			return false
 		}
 	}
 
-	for id := range newMap {
-		if !oldMap[id] {
+	for id, count := range newCounts {
+		if oldCounts[id] != count {
 			return false
 		}
 	}
