@@ -112,6 +112,12 @@ func (pc *ProxyConfig) GenerateStableID() string {
 		idComponents = append(idComponents, pc.PublicKey)
 	}
 
+	if pc.Name != "" {
+		idComponents = append(idComponents, pc.Name)
+	}
+
+	idComponents = append(idComponents, fmt.Sprintf("idx:%d", pc.Index))
+
 	idString := strings.Join(idComponents, "|")
 
 	hash := sha256.Sum256([]byte(idString))
