@@ -96,6 +96,7 @@ func main() {
 		config.CLIConfig.Proxy.DownloadTimeout,
 		config.CLIConfig.Proxy.DownloadMinSize,
 		config.CLIConfig.Proxy.CheckMethod,
+		config.CLIConfig.Proxy.HistoryOfTheLast,
 	)
 
 	runCheckIteration := func() {
@@ -166,6 +167,7 @@ func main() {
 	mux.Handle("/health", web.HealthHandler())
 	mux.Handle("/static/", web.StaticHandler())
 	mux.Handle("/api/v1/public/proxies", web.APIPublicProxiesHandler(proxyChecker))
+	mux.Handle("/api/v1/public/proxies/history", web.APIPublicProxiesHistoryHandler(proxyChecker))
 
 	web.RegisterConfigEndpoints(*proxyConfigs, proxyChecker, config.CLIConfig.Xray.StartPort)
 

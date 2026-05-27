@@ -27,6 +27,7 @@ type EndpointInfo struct {
 	Status     bool
 	Latency    time.Duration
 	StableID   string
+	History    []checker.HistoryItem
 }
 
 func IndexHandler(version string, proxyChecker *checker.ProxyChecker) http.HandlerFunc {
@@ -59,6 +60,7 @@ func IndexHandler(version string, proxyChecker *checker.ProxyChecker) http.Handl
 					Status:   ep.Status,
 					Latency:  ep.Latency,
 					StableID: ep.StableID,
+					History:  ep.History, // ← добавил
 				}
 			}
 		}
@@ -83,6 +85,7 @@ func IndexHandler(version string, proxyChecker *checker.ProxyChecker) http.Handl
 			ShowServerDetails:          showServerDetails,
 			IsPublic:                   isPublic,
 			SubscriptionName:           subscription.GetSubscriptionName(),
+			HistoryCapacity:            config.CLIConfig.Proxy.HistoryOfTheLast,
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -170,6 +173,7 @@ func RegisterConfigEndpoints(proxies []*models.ProxyConfig, proxyChecker *checke
 			Status:     status,
 			Latency:    latency,
 			StableID:   proxy.StableID,
+			History:    proxyChecker.GetHistory(proxy.StableID),
 		})
 	}
 

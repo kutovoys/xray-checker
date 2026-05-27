@@ -441,6 +441,80 @@
       .badge-transparent {
         background: transparent;
       }
+
+      /* History bars */
+      .history-row {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        height: 14px;
+        width: 100%;
+        margin-top: 0.5rem;
+      }
+      .history-bar {
+        flex: 1;
+        min-width: 0;
+        height: 100%;
+        border-radius: 1px;
+        background: var(--segment-empty);
+        transition: opacity 0.15s ease, transform 0.15s ease;
+        cursor: pointer;
+      }
+      .history-bar:hover {
+        opacity: 0.7;
+        transform: scaleY(1.3);
+      }
+      .history-bar.bar-good {
+        background: var(--color-green);
+      }
+      .history-bar.bar-medium {
+        background: var(--color-yellow);
+      }
+      .history-bar.bar-bad {
+        background: var(--color-red);
+      }
+      .history-bar.bar-offline {
+        background: var(--color-red);
+        opacity: 0.5;
+      }
+      .history-bar.bar-empty {
+        background: var(--segment-empty);
+        opacity: 0.4;
+        cursor: default;
+      }
+      .history-bar.bar-empty:hover {
+        opacity: 0.4;
+        transform: none;
+      }
+
+      /* Custom tooltip */
+      .history-tooltip {
+        position: fixed;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        color: var(--text-primary);
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+        padding: 4px 8px;
+        border-radius: 4px;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.1s ease;
+        z-index: 1000;
+        white-space: nowrap;
+        transform: translate(-50%, calc(-100% - 8px));
+      }
+      .history-tooltip.visible {
+        opacity: 1;
+      }
+      .history-tooltip-status {
+        font-size: 10px;
+        color: var(--text-muted);
+        margin-top: 2px;
+      }
+      .history-tooltip-latency {
+        font-weight: 500;
+      }
     </style>
   </head>
 
@@ -448,6 +522,15 @@
     class="min-h-screen antialiased"
     :class="[badgeMode && 'badge-body', hideBackground && 'no-bg']"
   >
+  <!-- Custom tooltip for history bars -->
+  <div
+          class="history-tooltip"
+          :class="tooltip.visible && 'visible'"
+          :style="`left: ${tooltip.x}px; top: ${tooltip.y}px`"
+  >
+    <div class="history-tooltip-latency" x-text="tooltip.latency"></div>
+    <div class="history-tooltip-status" x-text="tooltip.status"></div>
+  </div>
     <!-- Badge Mode -->
     <template x-if="badgeMode && badgeProxy">
       <div class="badge-container" :style="badgeContainerStyle">
@@ -858,82 +941,85 @@
       >
         <template x-for="(proxy, idx) in filteredProxies" :key="proxy.stableId">
           <div
-            class="proxy-card group card rounded-lg px-3 py-2.5 flex items-center gap-3 transition-all duration-150"
-            :class="initialLoad && 'animate'"
+                  class="proxy-card group card rounded-lg px-3 py-2.5 transition-all duration-150"
+                  :class="initialLoad && 'animate'"
           >
-            <!-- Status dot -->
-            <div class="relative flex-shrink-0">
-              <div
-                class="w-2 h-2 rounded-full"
-                :class="proxy.status ? 'status-online pulse' : 'status-offline'"
-              ></div>
-            </div>
+            <!-- Верхний ряд: dot + name + latency + copy -->
+            <div class="flex items-center gap-3">
+              <!-- Status dot -->
+              <div class="relative flex-shrink-0">
+                <div
+                        class="w-2 h-2 rounded-full"
+                        :class="proxy.status ? 'status-online pulse' : 'status-offline'"
+                ></div>
+              </div>
 
-            <!-- Info -->
-            <div class="flex-1 min-w-0">
-              {{ if .IsPublic }}
-              <span
-                class="text-sm text-primary truncate block"
-                x-text="proxy.name"
-              ></span>
-              {{ else }}
-              <a
-                :href="proxy.url"
+              <!-- Info -->
+              <div class="flex-1 min-w-0">
+                {{ if .IsPublic }}
+                <span
+                        class="text-sm text-primary truncate block"
+                        x-text="proxy.name"
+                ></span>
+                {{ else }}
+
+                <a href="proxy.url"
                 target="_blank"
                 class="text-sm text-primary link-hover truncate block transition-colors"
                 x-text="proxy.name"
-              ></a>
-              {{ end }} {{ if .ShowServerDetails }}
-              <span class="text-xs text-muted truncate block"
+                ></a>
+                {{ end }} {{ if .ShowServerDetails }}
+                <span class="text-xs text-muted truncate block"
                 ><span x-text="proxy.serverInfo"></span> · :<span
-                  x-text="proxy.proxyPort"
+                        x-text="proxy.proxyPort"
                 ></span
+                ></span>
+                {{ end }}
+              </div>
+
+              <!-- Latency -->
+              <span
+                      class="text-xs tabular-nums flex-shrink-0"
+                      :class="proxy.latencyMs === 0 ? 'text-muted' : proxy.latencyMs < 500 ? 'latency-good' : proxy.latencyMs < 1000 ? 'latency-medium' : 'latency-bad'"
+                      x-text="proxy.latency"
               ></span>
+
+              {{ if not .IsPublic }}
+              <!-- Copy -->
+              <button
+                      @click="copyUrl(proxy)"
+                      class="hidden sm:block p-1.5 rounded text-muted btn-icon transition-all flex-shrink-0"
+                      title="Copy URL"
+              >
+                <svg
+                        class="w-3.5 h-3.5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                >
+                  <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                  />
+                </svg>
+              </button>
               {{ end }}
             </div>
 
-            <!-- Latency -->
-            <div class="flex flex-col items-center gap-1 flex-shrink-0">
-              <span
-                class="text-xs tabular-nums"
-                :class="proxy.latencyMs === 0 ? 'text-muted' : proxy.latencyMs < 500 ? 'latency-good' : proxy.latencyMs < 1000 ? 'latency-medium' : 'latency-bad'"
-                x-text="proxy.latency"
-              ></span>
-              <div class="flex items-center gap-0.5">
-                <template x-for="i in 5" :key="i">
-                  <div
-                    class="latency-segment"
-                    :class="proxy.latencyMs === 0 ? '' :
-                    (proxy.latencyMs < 500 ? (i <= getSegments(proxy.latencyMs) ? 'segment-good' : '') :
-                     proxy.latencyMs < 1000 ? (i <= getSegments(proxy.latencyMs) ? 'segment-medium' : '') :
-                     (i <= getSegments(proxy.latencyMs) ? 'segment-bad' : ''))"
-                  ></div>
-                </template>
-              </div>
+            <!-- Нижний ряд: история на всю ширину -->
+            <div class="history-row mt-2">
+              <template x-for="slot in historySlots(proxy)" :key="slot.key">
+                <div
+                        class="history-bar"
+                        :class="slot.empty ? 'bar-empty' : historyBarClass(slot)"
+                        @mouseenter="!slot.empty && showTooltip($event, slot)"
+                        @mousemove="!slot.empty && moveTooltip($event)"
+                        @mouseleave="hideTooltip()"
+                ></div>
+              </template>
             </div>
-
-            {{ if not .IsPublic }}
-            <!-- Copy -->
-            <button
-              @click="copyUrl(proxy)"
-              class="hidden sm:block p-1.5 rounded text-muted btn-icon transition-all"
-              title="Copy URL"
-            >
-              <svg
-                class="w-3.5 h-3.5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                />
-              </svg>
-            </button>
-            {{ end }}
           </div>
         </template>
       </div>
@@ -1017,6 +1103,7 @@
 
       function dashboard() {
         return {
+          historyCapacity: {{ .HistoryCapacity }},
           darkMode: localStorage.getItem('darkMode') !== 'false',
           autoRefresh: localStorage.getItem('autoRefresh') === 'true',
           countdown: {{ .CheckInterval }},
@@ -1026,6 +1113,7 @@
           filter: localStorage.getItem('filter') || 'all',
           sort: localStorage.getItem('sort') || 'default',
           toasts: [],
+          tooltip: { visible: false, x: 0, y: 0, latency: '', status: '' },
           initialLoad: true,
 
           // URL-controlled visibility
@@ -1067,7 +1155,7 @@
 
           proxies: [
             {{ range $.Endpoints }}
-            { name: "{{.Name}}", stableId: "{{.StableID}}", {{ if $.ShowServerDetails }}serverInfo: "{{.ServerInfo}}", proxyPort: {{.ProxyPort}}, {{ end }}{{ if not $.IsPublic }}url: "{{.URL}}", {{ end }}index: {{.Index}}, status: {{.Status}}, latency: "{{ formatLatency .Latency }}", latencyMs: {{ .Latency.Milliseconds }} },
+            { name: "{{.Name}}", stableId: "{{.StableID}}", {{ if $.ShowServerDetails }}serverInfo: "{{.ServerInfo}}", proxyPort: {{.ProxyPort}}, {{ end }}{{ if not $.IsPublic }}url: "{{.URL}}", {{ end }}index: {{.Index}}, status: {{.Status}}, latency: "{{ formatLatency .Latency }}", latencyMs: {{ .Latency.Milliseconds }}, history: {{ marshalHistory .History }} },
             {{ end }}
           ],
 
@@ -1209,6 +1297,58 @@
             return 1;
           },
 
+        historyBarClass(h) {
+          if (!h.online) return 'bar-offline';
+          if (h.latencyMs < 500) return 'bar-good';
+          if (h.latencyMs < 1000) return 'bar-medium';
+          return 'bar-bad';
+        },
+
+        historySlots(proxy) {
+          const cap = this.historyCapacity || 10;
+          const hist = proxy.history || [];
+          const slots = [];
+          // Заполняем слева направо: сначала пустые, потом реальные записи
+          const emptyCount = Math.max(0, cap - hist.length);
+          for (let i = 0; i < emptyCount; i++) {
+            slots.push({ empty: true, key: 'empty-' + i });
+          }
+          for (const h of hist) {
+            slots.push({ ...h, empty: false, key: 'c-' + h.checkCount });
+          }
+          return slots;
+        },
+
+        showTooltip(e, slot) {
+          this.tooltip.latency = slot.online ? slot.latencyMs + 'ms' : 'Offline';
+          this.tooltip.status = '#' + slot.checkCount;
+          this.tooltip.x = e.clientX;
+          this.tooltip.y = e.clientY;
+          this.tooltip.visible = true;
+        },
+
+        moveTooltip(e) {
+          this.tooltip.x = e.clientX;
+          this.tooltip.y = e.clientY;
+        },
+
+        hideTooltip() {
+          this.tooltip.visible = false;
+        },
+
+        historyItemTooltip(h) {
+          if (!h.online) return '#' + h.checkCount + ' · offline';
+          return '#' + h.checkCount + ' · ' + h.latencyMs + 'ms';
+        },
+
+        historyTooltip(proxy) {
+          if (!proxy.history || !proxy.history.length) return '';
+          const total = proxy.history.length;
+          const up = proxy.history.filter(h => h.online).length;
+          const pct = Math.round((up / total) * 100);
+          return 'Uptime: ' + pct + '% (' + up + '/' + total + ')';
+        },
+
           stripLeadingEmoji(str) {
             return str.replace(/^[\p{Emoji}\p{Emoji_Modifier}\p{Emoji_Component}\p{Emoji_Modifier_Base}\p{Emoji_Presentation}\u200d\ufe0f\s]+/u, '').trim() || str;
           },
@@ -1237,6 +1377,7 @@
                     proxy.status = updated.online;
                     proxy.latencyMs = updated.latencyMs;
                     proxy.latency = updated.latencyMs > 0 ? updated.latencyMs + 'ms' : 'n/a';
+                    proxy.history = updated.history || [];   // ← добавил
                   }
                 });
                 // Update badge proxy if in badge mode

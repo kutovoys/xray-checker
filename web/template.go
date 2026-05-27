@@ -3,11 +3,14 @@ package web
 import (
 	"bytes"
 	"embed"
+	"encoding/json" // ← новое
 	"fmt"
 	"html/template"
 	"io"
 	"strings"
 	"time"
+
+	"xray-checker/checker" // ← новое
 )
 
 //go:embed templates/*.html
@@ -23,6 +26,13 @@ func init() {
 				return "n/a"
 			}
 			return fmt.Sprintf("%dms", d.Milliseconds())
+		},
+		"marshalHistory": func(h []checker.HistoryItem) template.JS {
+			b, err := json.Marshal(h)
+			if err != nil {
+				return template.JS("[]")
+			}
+			return template.JS(b)
 		},
 	}
 
@@ -52,6 +62,7 @@ type PageData struct {
 	ShowServerDetails          bool
 	IsPublic                   bool
 	SubscriptionName           string
+	HistoryCapacity            int
 }
 
 func RenderIndex(w io.Writer, data PageData) error {

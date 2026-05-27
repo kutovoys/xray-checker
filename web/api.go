@@ -29,10 +29,17 @@ type ProxyInfo struct {
 }
 
 type PublicProxyInfo struct {
-	StableID  string `json:"stableId"`
-	Name      string `json:"name"`
-	Online    bool   `json:"online"`
-	LatencyMs int64  `json:"latencyMs"`
+	StableID  string                `json:"stableId"`
+	Name      string                `json:"name"`
+	Online    bool                  `json:"online"`
+	LatencyMs int64                 `json:"latencyMs"`
+	History   []checker.HistoryItem `json:"history"`
+}
+
+type PublicProxyHistoryInfo struct {
+	StableID string                `json:"stableId"`
+	Name     string                `json:"name"`
+	History  []checker.HistoryItem `json:"history"`
 }
 
 type StatusResponse struct {
@@ -121,6 +128,31 @@ func APIPublicProxiesHandler(proxyChecker *checker.ProxyChecker) http.HandlerFun
 				Name:      proxy.Name,
 				Online:    status,
 				LatencyMs: latency.Milliseconds(),
+				History:   proxyChecker.GetHistory(proxy.StableID),
+			})
+		}
+
+		writeJSON(w, result)
+	}
+}
+
+// APIPublicProxiesHistoryHandler returns public info for all proxies with check history
+// @Summary List all proxies with history (public)
+// @Description Returns a list of all proxies with the last N check results (no auth)
+// @Tags public
+// @Produce json
+// @Success 200 {array} PublicProxyHistoryInfo
+// @Router /api/v1/public/proxies/history [get]
+func APIPublicProxiesHistoryHandler(proxyChecker *checker.ProxyChecker) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		proxies := proxyChecker.GetProxies()
+		result := make([]PublicProxyHistoryInfo, 0, len(proxies))
+
+		for _, proxy := range proxies {
+			result = append(result, PublicProxyHistoryInfo{
+				StableID: proxy.StableID,
+				Name:     proxy.Name,
+				History:  proxyChecker.GetHistory(proxy.StableID),
 			})
 		}
 
