@@ -1,6 +1,7 @@
 package subscription
 
 import (
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -320,6 +321,7 @@ func (p *Parser) parseLineByLine(cleanedData []byte, originalData map[string]*or
 	// Re-index configs
 	for i, cfg := range allConfigs {
 		cfg.Index = i
+		cfg.StableID = cfg.GenerateStableID()
 	}
 
 	return allConfigs
@@ -370,19 +372,18 @@ func (p *Parser) parseJSONConfigs(data []byte) ([]*models.ProxyConfig, error) {
 	configIndex := 0
 
 	for _, config := range configs {
+		var groupConfigs []*models.ProxyConfig
 		for _, outboundRaw := range config.Outbounds {
-			proxyConfig, err := p.convertOutbound(outboundRaw, configIndex, nil)
+			proxyConfig, err := p.convertOutbound(outboundRaw, configIndex+len(groupConfigs), nil)
 			if err != nil {
 				continue
 			}
 			if proxyConfig != nil {
-				if config.Remarks != "" {
-					proxyConfig.Name = config.Remarks
-				}
-				proxyConfigs = append(proxyConfigs, proxyConfig)
-				configIndex++
+				groupConfigs = append(groupConfigs, proxyConfig)
 			}
 		}
+
+		proxyConfigs, configIndex = appendJSONConfigGroup(proxyConfigs, groupConfigs, config.Remarks, configIndex)
 	}
 
 	if len(proxyConfigs) == 0 {
@@ -413,9 +414,6 @@ func (p *Parser) parseSingleJSONConfig(data []byte) ([]*models.ProxyConfig, erro
 			continue
 		}
 		if proxyConfig != nil {
-			if config.Remarks != "" {
-				proxyConfig.Name = config.Remarks
-			}
 			proxyConfigs = append(proxyConfigs, proxyConfig)
 			configIndex++
 		}
@@ -425,7 +423,30 @@ func (p *Parser) parseSingleJSONConfig(data []byte) ([]*models.ProxyConfig, erro
 		return nil, fmt.Errorf("no valid proxy configurations found in single JSON config")
 	}
 
+	proxyConfigs, _ = appendJSONConfigGroup(nil, proxyConfigs, config.Remarks, 0)
+
 	return proxyConfigs, nil
+}
+
+func appendJSONConfigGroup(dst []*models.ProxyConfig, group []*models.ProxyConfig, remarks string, startIndex int) ([]*models.ProxyConfig, int) {
+	if remarks != "" {
+		for _, pc := range group {
+			if len(group) > 1 {
+				pc.Name = fmt.Sprintf("%s - %s", remarks, pc.Server)
+			} else {
+				pc.Name = remarks
+			}
+		}
+	}
+
+	for _, pc := range group {
+		pc.Index = startIndex
+		pc.StableID = pc.GenerateStableID()
+		dst = append(dst, pc)
+		startIndex++
+	}
+
+	return dst, startIndex
 }
 
 func (p *Parser) cleanEmptyLines(data []byte) []byte {
@@ -466,12 +487,7 @@ func (p *Parser) fetchURLContent(source string) (*fetchResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "Xray-Checker")
-	req.Header.Set("Accept", "*/*")
-	req.Header.Set("X-Device-OS", "CheckerOS")
-	req.Header.Set("X-Ver-OS", config.Version)
-	req.Header.Set("X-Device-Model", "Xray-Checker Pro Max")
-	req.Header.Set("X-Hwid", "0JLQq9Ca0JvQrtCn0Jgg0JHQm9Cp0KLQrCBIV0lE")
+	p.applySubscriptionHeaders(req)
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
@@ -920,6 +936,7 @@ func (p *Parser) parseFolder(folderPath string) ([]*models.ProxyConfig, error) {
 
 		for _, cfg := range configs {
 			cfg.Index = configIndex
+			cfg.StableID = cfg.GenerateStableID()
 			allConfigs = append(allConfigs, cfg)
 			configIndex++
 		}
@@ -939,7 +956,15 @@ func (p *Parser) parseSingleConfigFile(data []byte, startIndex int) ([]*models.P
 	trimmedData := strings.TrimSpace(string(data))
 
 	if strings.HasPrefix(trimmedData, "[") {
-		return p.parseJSONConfigs(data)
+		configs, err := p.parseJSONConfigs(data)
+		if err != nil {
+			return nil, err
+		}
+		for i, cfg := range configs {
+			cfg.Index = startIndex + i
+			cfg.StableID = cfg.GenerateStableID()
+		}
+		return configs, nil
 	}
 
 	if strings.HasPrefix(trimmedData, "{") {
@@ -954,14 +979,11 @@ func (p *Parser) parseSingleConfigFile(data []byte, startIndex int) ([]*models.P
 
 		var proxyConfigs []*models.ProxyConfig
 		for _, outboundRaw := range config.Outbounds {
-			proxyConfig, err := p.convertOutbound(outboundRaw, startIndex, nil)
+			proxyConfig, err := p.convertOutbound(outboundRaw, startIndex+len(proxyConfigs), nil)
 			if err != nil {
 				continue
 			}
 			if proxyConfig != nil {
-				if config.Remarks != "" {
-					proxyConfig.Name = config.Remarks
-				}
 				proxyConfigs = append(proxyConfigs, proxyConfig)
 			}
 		}
@@ -970,8 +992,45 @@ func (p *Parser) parseSingleConfigFile(data []byte, startIndex int) ([]*models.P
 			return nil, fmt.Errorf("no valid proxy configurations found")
 		}
 
+		proxyConfigs, _ = appendJSONConfigGroup(nil, proxyConfigs, config.Remarks, startIndex)
+
 		return proxyConfigs, nil
 	}
 
 	return nil, fmt.Errorf("unsupported config format")
+}
+
+func (p *Parser) applySubscriptionHeaders(req *http.Request) {
+	if config.CLIConfig.Subscription.JSONFormat {
+		req.Header.Set("User-Agent", "Happ/1.0 (android)")
+		req.Header.Set("X-Hwid", generateDeviceID())
+	} else {
+		req.Header.Set("User-Agent", "Xray-Checker")
+		req.Header.Set("X-Device-OS", "CheckerOS")
+		req.Header.Set("X-Ver-OS", config.Version)
+		req.Header.Set("X-Device-Model", "Xray-Checker Pro Max")
+		req.Header.Set("X-Hwid", "0JLQq9Ca0JvQrtCn0Jgg0JHQm9Cp0KLQrCBIV0lE")
+	}
+
+	if config.CLIConfig.Subscription.UserAgent != "" {
+		req.Header.Set("User-Agent", config.CLIConfig.Subscription.UserAgent)
+	}
+
+	req.Header.Set("Accept", "*/*")
+
+	for _, h := range config.CLIConfig.Subscription.Headers {
+		parts := strings.SplitN(h, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		req.Header.Set(strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]))
+	}
+}
+
+func generateDeviceID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "xray-checker"
+	}
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
