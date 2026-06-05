@@ -49,10 +49,11 @@ func IndexHandler(version string, proxyChecker *checker.ProxyChecker) http.Handl
 		endpointsMu.RUnlock()
 
 		isPublic := config.CLIConfig.Web.Public
-		showServerDetails := config.CLIConfig.Web.ShowServerDetails
-		if isPublic {
-			showServerDetails = false
-		}
+		showServerDetails := shouldShowServerDetails(
+			config.CLIConfig.Web.ShowServerDetails,
+			isPublic,
+			config.CLIConfig.Web.TrustedExternalAuth,
+		)
 
 		endpoints := make([]EndpointInfo, len(allEndpoints))
 		for i, ep := range allEndpoints {
@@ -106,6 +107,13 @@ func IndexHandler(version string, proxyChecker *checker.ProxyChecker) http.Handl
 			return
 		}
 	}
+}
+
+func shouldShowServerDetails(showServerDetails bool, isPublic bool, trustedExternalAuth bool) bool {
+	if isPublic && !trustedExternalAuth {
+		return false
+	}
+	return showServerDetails
 }
 
 func HealthHandler() http.HandlerFunc {
