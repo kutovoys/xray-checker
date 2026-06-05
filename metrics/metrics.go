@@ -33,7 +33,7 @@ func InitMetrics(instance string) {
 	metricsInstance = instance
 	hasInstance = instance != ""
 
-	labels := []string{"protocol", "address", "name", "sub_name"}
+	labels := []string{"protocol", "address", "name", "sub_name", "group_name", "stable_id"}
 	if hasInstance {
 		labels = append(labels, "instance")
 	}
@@ -63,28 +63,28 @@ func GetProxyLatencyMetric() *prometheus.GaugeVec {
 	return proxyLatency
 }
 
-func buildLabelValues(protocol, address, name, subName string) []string {
-	labels := []string{protocol, address, name, subName}
+func buildLabelValues(protocol, address, name, subName, groupName, stableID string) []string {
+	labels := []string{protocol, address, name, subName, groupName, stableID}
 	if hasInstance {
 		labels = append(labels, metricsInstance)
 	}
 	return labels
 }
 
-func RecordProxyStatus(protocol, address, name, subName string, value float64) {
-	proxyStatus.WithLabelValues(buildLabelValues(protocol, address, name, subName)...).Set(value)
+func RecordProxyStatus(protocol, address, name, subName, groupName, stableID string, value float64) {
+	proxyStatus.WithLabelValues(buildLabelValues(protocol, address, name, subName, groupName, stableID)...).Set(value)
 }
 
-func RecordProxyLatency(protocol, address, name, subName string, value time.Duration) {
-	proxyLatency.WithLabelValues(buildLabelValues(protocol, address, name, subName)...).Set(float64(value.Milliseconds()))
+func RecordProxyLatency(protocol, address, name, subName, groupName, stableID string, value time.Duration) {
+	proxyLatency.WithLabelValues(buildLabelValues(protocol, address, name, subName, groupName, stableID)...).Set(float64(value.Milliseconds()))
 }
 
-func DeleteProxyStatus(protocol, address, name, subName string) {
-	proxyStatus.DeleteLabelValues(buildLabelValues(protocol, address, name, subName)...)
+func DeleteProxyStatus(protocol, address, name, subName, groupName, stableID string) {
+	proxyStatus.DeleteLabelValues(buildLabelValues(protocol, address, name, subName, groupName, stableID)...)
 }
 
-func DeleteProxyLatency(protocol, address, name, subName string) {
-	proxyLatency.DeleteLabelValues(buildLabelValues(protocol, address, name, subName)...)
+func DeleteProxyLatency(protocol, address, name, subName, groupName, stableID string) {
+	proxyLatency.DeleteLabelValues(buildLabelValues(protocol, address, name, subName, groupName, stableID)...)
 }
 
 func ParseURL(remoteWriteURL string) (*RemoteWriteConfig, error) {

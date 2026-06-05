@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -34,6 +33,15 @@ type ProxyChecker struct {
 	checkMethod     string
 	mu              sync.RWMutex
 	generation      uint64
+}
+
+type proxyMetricLabels struct {
+	protocol  string
+	address   string
+	name      string
+	subName   string
+	groupName string
+	stableID  string
 }
 
 func NewProxyChecker(proxies []*models.ProxyConfig, startPort int, ipCheckURL string, ipCheckTimeout int, genMethodURL string, downloadURL string, downloadTimeout int, downloadMinSize int64, checkMethod string) *ProxyChecker {
@@ -102,6 +110,8 @@ func (pc *ProxyChecker) checkProxyInternal(proxy *models.ProxyConfig, expectedGe
 			fmt.Sprintf("%s:%d", proxy.Server, proxy.Port),
 			proxy.Name,
 			proxy.SubName,
+			proxy.GroupName,
+			proxy.StableID,
 			0,
 		)
 		pc.currentMetrics.Store(metricKey, false)
@@ -116,6 +126,8 @@ func (pc *ProxyChecker) checkProxyInternal(proxy *models.ProxyConfig, expectedGe
 			fmt.Sprintf("%s:%d", proxy.Server, proxy.Port),
 			proxy.Name,
 			proxy.SubName,
+			proxy.GroupName,
+			proxy.StableID,
 			time.Duration(0),
 		)
 		pc.latencyMetrics.Store(metricKey, time.Duration(0))
@@ -178,6 +190,8 @@ func (pc *ProxyChecker) checkProxyInternal(proxy *models.ProxyConfig, expectedGe
 			fmt.Sprintf("%s:%d", proxy.Server, proxy.Port),
 			proxy.Name,
 			proxy.SubName,
+			proxy.GroupName,
+			proxy.StableID,
 			1,
 		)
 		metrics.RecordProxyLatency(
@@ -185,6 +199,8 @@ func (pc *ProxyChecker) checkProxyInternal(proxy *models.ProxyConfig, expectedGe
 			fmt.Sprintf("%s:%d", proxy.Server, proxy.Port),
 			proxy.Name,
 			proxy.SubName,
+			proxy.GroupName,
+			proxy.StableID,
 			latency,
 		)
 
@@ -312,11 +328,23 @@ func (pc *ProxyChecker) checkByDownload(client *http.Client) (bool, string, time
 
 func (pc *ProxyChecker) ClearMetrics() {
 	pc.currentMetrics.Range(func(key, _ interface{}) bool {
-		metricKey := key.(string)
-		parts := strings.Split(metricKey, "|")
-		if len(parts) >= 4 {
-			metrics.DeleteProxyStatus(parts[0], parts[1], parts[2], parts[3])
-			metrics.DeleteProxyLatency(parts[0], parts[1], parts[2], parts[3])
+		if metricKey, ok := key.(proxyMetricLabels); ok {
+			metrics.DeleteProxyStatus(
+				metricKey.protocol,
+				metricKey.address,
+				metricKey.name,
+				metricKey.subName,
+				metricKey.groupName,
+				metricKey.stableID,
+			)
+			metrics.DeleteProxyLatency(
+				metricKey.protocol,
+				metricKey.address,
+				metricKey.name,
+				metricKey.subName,
+				metricKey.groupName,
+				metricKey.stableID,
+			)
 		}
 		pc.currentMetrics.Delete(key)
 		return true
@@ -359,19 +387,19 @@ func (pc *ProxyChecker) CheckAllProxies() {
 	wg.Wait()
 }
 
-func proxyMetricKey(proxy *models.ProxyConfig) string {
+func proxyMetricKey(proxy *models.ProxyConfig) proxyMetricLabels {
 	if proxy.StableID == "" {
 		proxy.StableID = proxy.GenerateStableID()
 	}
 
-	return fmt.Sprintf("%s|%s:%d|%s|%s|%s",
-		proxy.Protocol,
-		proxy.Server,
-		proxy.Port,
-		proxy.Name,
-		proxy.SubName,
-		proxy.StableID,
-	)
+	return proxyMetricLabels{
+		protocol:  proxy.Protocol,
+		address:   fmt.Sprintf("%s:%d", proxy.Server, proxy.Port),
+		name:      proxy.Name,
+		subName:   proxy.SubName,
+		groupName: proxy.GroupName,
+		stableID:  proxy.StableID,
+	}
 }
 
 func (pc *ProxyChecker) GetProxyStatus(proxy *models.ProxyConfig) (bool, time.Duration, error) {
@@ -380,10 +408,6 @@ func (pc *ProxyChecker) GetProxyStatus(proxy *models.ProxyConfig) (bool, time.Du
 	}
 
 	metricKey := proxyMetricKey(proxy)
-
-	if metricKey == "" {
-		return false, 0, fmt.Errorf("proxy not found")
-	}
 
 	status, ok := pc.currentMetrics.Load(metricKey)
 	if !ok {
