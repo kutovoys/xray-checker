@@ -65,26 +65,29 @@ func (g *ConfigGenerator) generateInbounds(proxies []*models.ProxyConfig, startP
 	var inbounds []map[string]interface{}
 
 	for _, proxy := range proxies {
-		inbound := map[string]interface{}{
-			"listen":   "127.0.0.1",
-			"port":     startPort + proxy.Index,
-			"protocol": "socks",
-			"tag":      fmt.Sprintf("%s_%s_%d_Inbound", proxy.Name, proxy.Protocol, proxy.Index),
-			"sniffing": map[string]interface{}{
-				"enabled":      true,
-				"destOverride": []string{"http", "tls", "quic"},
-				"routeOnly":    true,
-			},
-			"settings": map[string]interface{}{
-				"auth":      "noauth",
-				"udp":       true,
-				"userLevel": 0,
-			},
-		}
-		inbounds = append(inbounds, inbound)
+		inbounds = append(inbounds, GenerateProxyInbound(proxy, startPort))
 	}
 
 	return inbounds
+}
+
+func GenerateProxyInbound(proxy *models.ProxyConfig, startPort int) map[string]interface{} {
+	return map[string]interface{}{
+		"listen":   "127.0.0.1",
+		"port":     startPort + proxy.Index,
+		"protocol": "socks",
+		"tag":      fmt.Sprintf("%s_%s_%d_Inbound", proxy.Name, proxy.Protocol, proxy.Index),
+		"sniffing": map[string]interface{}{
+			"enabled":      true,
+			"destOverride": []string{"http", "tls", "quic"},
+			"routeOnly":    true,
+		},
+		"settings": map[string]interface{}{
+			"auth":      "noauth",
+			"udp":       true,
+			"userLevel": 0,
+		},
+	}
 }
 
 func (g *ConfigGenerator) generateOutbounds(proxies []*models.ProxyConfig) []map[string]interface{} {
@@ -183,6 +186,10 @@ func (g *ConfigGenerator) generateProxyOutbound(proxy *models.ProxyConfig) map[s
 	outbound["streamSettings"] = g.generateStreamSettings(proxy)
 
 	return outbound
+}
+
+func GenerateProxyOutbound(proxy *models.ProxyConfig) map[string]interface{} {
+	return NewConfigGenerator().generateProxyOutbound(proxy)
 }
 
 func (g *ConfigGenerator) generateStreamSettings(proxy *models.ProxyConfig) map[string]interface{} {
@@ -316,18 +323,22 @@ func (g *ConfigGenerator) generateRouting(proxies []*models.ProxyConfig) map[str
 	})
 
 	for _, proxy := range proxies {
-		inboundTag := fmt.Sprintf("%s_%s_%d_Inbound", proxy.Name, proxy.Protocol, proxy.Index)
-		outboundTag := fmt.Sprintf("%s_%d", proxy.Name, proxy.Index)
-
-		rules = append(rules, map[string]interface{}{
-			"type":        "field",
-			"inboundTag":  []string{inboundTag},
-			"outboundTag": outboundTag,
-		})
+		rules = append(rules, GenerateProxyRoutingRule(proxy))
 	}
 
 	return map[string]interface{}{
 		"domainStrategy": "AsIs",
 		"rules":          rules,
+	}
+}
+
+func GenerateProxyRoutingRule(proxy *models.ProxyConfig) map[string]interface{} {
+	inboundTag := fmt.Sprintf("%s_%s_%d_Inbound", proxy.Name, proxy.Protocol, proxy.Index)
+	outboundTag := fmt.Sprintf("%s_%d", proxy.Name, proxy.Index)
+
+	return map[string]interface{}{
+		"type":        "field",
+		"inboundTag":  []string{inboundTag},
+		"outboundTag": outboundTag,
 	}
 }

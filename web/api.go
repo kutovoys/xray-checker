@@ -10,6 +10,7 @@ import (
 	"xray-checker/checker"
 	"xray-checker/config"
 	"xray-checker/models"
+	"xray-checker/xray"
 )
 
 //go:embed openapi.yaml
@@ -88,6 +89,7 @@ type ProxyDetails struct {
 	Inbound          ProxyInboundInfo       `json:"inbound"`
 	Outbound         ProxyOutboundInfo      `json:"outbound"`
 	RawXhttpSettings map[string]interface{} `json:"rawXhttpSettings,omitempty"`
+	GeneratedConfig  map[string]interface{} `json:"generatedConfig,omitempty"`
 }
 
 type StatusResponse struct {
@@ -231,7 +233,59 @@ func toProxyDetails(proxy *models.ProxyConfig, startPort int) *ProxyDetails {
 		}
 	}
 
+	details.GeneratedConfig = sanitizeGeneratedConfig(map[string]interface{}{
+		"inbound":     xray.GenerateProxyInbound(proxy, startPort),
+		"outbound":    xray.GenerateProxyOutbound(proxy),
+		"routingRule": xray.GenerateProxyRoutingRule(proxy),
+	})
+
 	return details
+}
+
+func sanitizeGeneratedConfig(value interface{}) map[string]interface{} {
+	sanitized, ok := sanitizeGeneratedValue(value).(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	return sanitized
+}
+
+func sanitizeGeneratedValue(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		result := make(map[string]interface{}, len(typed))
+		for key, nested := range typed {
+			switch strings.ToLower(key) {
+			case "id", "password":
+				if text, ok := nested.(string); ok {
+					result[key] = maskMiddle(text)
+					continue
+				}
+			}
+			result[key] = sanitizeGeneratedValue(nested)
+		}
+		return result
+	case []interface{}:
+		result := make([]interface{}, len(typed))
+		for i, nested := range typed {
+			result[i] = sanitizeGeneratedValue(nested)
+		}
+		return result
+	case []map[string]interface{}:
+		result := make([]interface{}, len(typed))
+		for i, nested := range typed {
+			result[i] = sanitizeGeneratedValue(nested)
+		}
+		return result
+	case []string:
+		result := make([]interface{}, len(typed))
+		for i, nested := range typed {
+			result[i] = nested
+		}
+		return result
+	default:
+		return value
+	}
 }
 
 func maskMiddle(value string) string {

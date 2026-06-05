@@ -399,6 +399,21 @@ components:
             host: "example.com"
             path: "/xhttp"
             mode: "auto"
+        generatedConfig:
+          type: object
+          additionalProperties: true
+          description: Sanitized Xray snippets generated for this proxy.
+          example:
+            inbound:
+              listen: "127.0.0.1"
+              port: 10000
+              protocol: "socks"
+            outbound:
+              tag: "US-Server-1_0"
+              protocol: "vless"
+            routingRule:
+              type: "field"
+              outboundTag: "US-Server-1_0"
 
     StatusResponse:
       type: object

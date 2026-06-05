@@ -320,15 +320,31 @@
         max-height: 0;
         opacity: 0;
         overflow: hidden;
+        pointer-events: none;
         transition: max-height 0.28s ease, opacity 0.2s ease;
+        visibility: hidden;
       }
       .group-panel.expanded {
         max-height: min(34rem, 62vh);
         opacity: 1;
+        pointer-events: auto;
+        visibility: visible;
       }
       .group-panel-scroll {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
         max-height: min(32rem, 58vh);
         overflow-y: auto;
+      }
+      @media (min-width: 1024px) {
+        .group-panel-scroll {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+      @media (min-width: 1280px) {
+        .group-panel-scroll {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
       }
       .group-chevron {
         transition: transform 0.18s ease;
@@ -336,18 +352,195 @@
       .group-chevron.expanded {
         transform: rotate(90deg);
       }
+      .proxy-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+      }
+      @media (min-width: 768px) {
+        .proxy-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+      @media (min-width: 1280px) {
+        .proxy-grid {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+      }
+      .display-row-wrapper {
+        display: contents;
+      }
+      .group-card-expanded {
+        grid-column: 1 / -1;
+      }
+      .proxy-card-row {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+      .group-summary-button {
+        display: grid;
+        grid-template-columns: auto auto minmax(0, 1fr);
+        align-items: center;
+        justify-items: start;
+        gap: 0.75rem;
+        width: 100%;
+        min-width: 0;
+        text-align: left;
+      }
+      .group-summary-text {
+        min-width: 0;
+        text-align: left;
+      }
+      .proxy-name {
+        line-height: 1.35;
+        text-align: left;
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
+      .proxy-meta {
+        line-height: 1.3;
+        text-align: left;
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
+      .local-proxy-port {
+        white-space: nowrap;
+      }
       .proxy-child-row {
         border-top: 1px solid var(--border);
+        min-width: 0;
+      }
+      .proxy-child-status {
+        flex-shrink: 0;
+      }
+      .details-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1.5rem 1rem;
+      }
+      .details-backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.62);
       }
       .details-modal {
+        position: relative;
+        width: min(100%, 46rem);
+        max-height: min(86vh, 58rem);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
         background: var(--bg-secondary);
         border: 1px solid var(--border);
+      }
+      .details-content {
+        min-height: 0;
+        overflow-y: auto;
+        padding: 0.75rem;
+      }
+      .details-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid var(--border);
+      }
+      .details-heading,
+      .details-subtitle {
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
+      .details-close {
+        width: 2.25rem;
+        height: 2.25rem;
+        border-radius: 0.5rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+      .details-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.5rem;
+        margin-bottom: 0.75rem;
+      }
+      .details-summary-card {
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border);
+        border-radius: 0.5rem;
+        padding: 0.55rem 0.7rem;
       }
       .details-row {
         border-bottom: 1px solid var(--border);
       }
       .details-row:last-child {
         border-bottom: none;
+      }
+      .details-kv-list {
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border);
+        border-radius: 0.5rem;
+        overflow: hidden;
+      }
+      .details-kv-row {
+        display: grid;
+        grid-template-columns: 8rem minmax(0, 1fr);
+        align-items: start;
+        gap: 0.75rem;
+        padding: 0.55rem 0.75rem;
+        font-size: 0.875rem;
+      }
+      .details-kv-label {
+        color: var(--text-muted);
+        font-size: 0.75rem;
+      }
+      .details-kv-value {
+        color: var(--text-primary);
+        overflow-wrap: anywhere;
+      }
+      .details-child-row:hover {
+        background: rgba(255, 255, 255, 0.05);
+      }
+      .details-section-title {
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        margin: 0.75rem 0 0.4rem;
+      }
+      .details-json {
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border);
+        border-radius: 0.5rem;
+        color: var(--text-primary);
+        font-size: 0.75rem;
+        line-height: 1.45;
+        max-height: 18rem;
+        overflow: auto;
+        padding: 0.75rem;
+      }
+      @media (max-width: 640px) {
+        .details-overlay {
+          align-items: stretch;
+          padding: 0.75rem;
+        }
+        .details-modal {
+          max-height: calc(100vh - 1.5rem);
+        }
+        .details-summary-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .details-kv-row {
+          grid-template-columns: 6.5rem minmax(0, 1fr);
+          gap: 0.5rem;
+          padding: 0.5rem 0.65rem;
+        }
       }
       .segment-good {
         background: var(--color-green);
@@ -890,20 +1083,20 @@
       <!-- Proxy Grid -->
       <div
         x-show="showProxies"
-        class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 mb-4"
+        class="proxy-grid"
       >
         <template x-for="(row, idx) in displayRows" :key="row.key">
-          <div class="contents">
+          <div class="display-row-wrapper">
             <template x-if="row.type === 'group'">
               <div
                 class="proxy-card card rounded-lg overflow-hidden transition-all duration-150"
-                :class="[initialLoad && 'animate', isGroupExpanded(row.key) && 'md:col-span-2 xl:col-span-3']"
+                :class="[initialLoad && 'animate', isGroupExpanded(row.key) && 'group-card-expanded']"
               >
-                <div class="px-3 py-2.5 flex items-center gap-3">
+                <div class="proxy-card-row px-3 py-2.5">
                   <button
                     type="button"
                     @click="toggleGroup(row.key)"
-                    class="flex items-center gap-3 flex-1 min-w-0 text-left"
+                    class="group-summary-button flex-1"
                     :aria-expanded="isGroupExpanded(row.key)"
                   >
                     <svg
@@ -926,12 +1119,12 @@
                         :class="groupStatusClass(row)"
                       ></div>
                     </div>
-                    <div class="flex-1 min-w-0">
+                    <div class="group-summary-text">
                       <span
-                        class="text-sm text-primary truncate block"
+                        class="proxy-name text-sm text-primary block"
                         x-text="displayName(row.name)"
                       ></span>
-                      <span class="text-xs text-muted truncate block">
+                      <span class="proxy-meta text-xs text-muted block">
                         <span x-text="row.children.length"></span>
                         configs ·
                         <span x-text="row.online"></span>
@@ -985,7 +1178,7 @@
                   class="group-panel"
                   :class="isGroupExpanded(row.key) && 'expanded'"
                 >
-                  <div class="group-panel-scroll grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3">
+                  <div class="group-panel-scroll">
                     <template
                       x-for="proxy in row.children"
                       :key="proxy.stableId"
@@ -993,7 +1186,7 @@
                       <div
                         class="proxy-child-row px-3 py-2 flex items-center gap-3"
                       >
-                        <div class="relative flex-shrink-0 ml-6">
+                        <div class="relative proxy-child-status">
                           <div
                             class="w-2 h-2 rounded-full"
                             :class="proxy.status ? 'status-online pulse' : 'status-offline'"
@@ -1002,23 +1195,23 @@
                         <div class="flex-1 min-w-0">
                           {{ if .IsPublic }}
                           <span
-                            class="text-sm text-primary truncate block"
+                            class="proxy-name text-sm text-primary block"
                             x-text="childDisplayName(proxy)"
                           ></span>
                           {{ else }}
                           <a
                             :href="proxy.url"
                             target="_blank"
-                            class="text-sm text-primary link-hover truncate block transition-colors"
+                            class="proxy-name text-sm text-primary link-hover block transition-colors"
                             x-text="childDisplayName(proxy)"
                           ></a>
                           {{ end }}
                           <span
                             x-show="proxy.serverInfo"
-                            class="text-xs text-muted truncate block"
+                            class="proxy-meta text-xs text-muted block"
                             ><span x-text="proxy.serverInfo"></span>
-                            <span x-show="proxy.proxyPort">
-                              · :<span x-text="proxy.proxyPort"></span></span
+                            <span x-show="proxy.proxyPort" class="local-proxy-port">
+                              · local :<span x-text="proxy.proxyPort"></span></span
                             ></span
                           >
                         </div>
@@ -1104,23 +1297,23 @@
                 <div class="flex-1 min-w-0">
                   {{ if .IsPublic }}
                   <span
-                    class="text-sm text-primary truncate block"
+                    class="proxy-name text-sm text-primary block"
                     x-text="displayName(row.proxy.name)"
                   ></span>
                   {{ else }}
                   <a
                     :href="row.proxy.url"
                     target="_blank"
-                    class="text-sm text-primary link-hover truncate block transition-colors"
+                    class="proxy-name text-sm text-primary link-hover block transition-colors"
                     x-text="displayName(row.proxy.name)"
                   ></a>
                   {{ end }}
                   <span
                     x-show="row.proxy.serverInfo"
-                    class="text-xs text-muted truncate block"
+                    class="proxy-meta text-xs text-muted block"
                     ><span x-text="row.proxy.serverInfo"></span>
-                    <span x-show="row.proxy.proxyPort">
-                      · :<span x-text="row.proxy.proxyPort"></span></span
+                    <span x-show="row.proxy.proxyPort" class="local-proxy-port">
+                      · local :<span x-text="row.proxy.proxyPort"></span></span
                     ></span
                   >
                 </div>
@@ -1263,35 +1456,33 @@
     <div
       x-show="detailsOpen"
       x-transition.opacity
-      class="fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
+      class="details-overlay"
       @keydown.escape.window="closeDetails()"
       x-cloak
     >
       <div
-        class="absolute inset-0 bg-black/60"
+        class="details-backdrop"
         @click="closeDetails()"
       ></div>
       <section
-        class="details-modal relative w-full max-w-3xl max-h-[86vh] rounded-lg shadow-2xl flex flex-col overflow-hidden"
+        class="details-modal rounded-lg shadow-2xl"
         @click.stop
       >
-        <header
-          class="px-4 py-3 border-b border-default flex items-start justify-between gap-3"
-        >
+        <header class="details-header">
           <div class="min-w-0">
             <h3
-              class="text-sm font-semibold text-primary truncate"
+              class="details-heading text-sm font-semibold text-primary"
               x-text="detailsTitle"
             ></h3>
             <p
-              class="text-xs text-muted mt-0.5 truncate"
+              class="details-subtitle text-xs text-muted mt-0.5"
               x-text="detailsSubtitle"
             ></p>
           </div>
           <button
             type="button"
             @click="closeDetails()"
-            class="btn h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0"
+            class="btn details-close"
             title="Close"
           >
             <svg
@@ -1310,11 +1501,11 @@
           </button>
         </header>
 
-        <div class="overflow-y-auto p-4">
+        <div class="details-content">
           <template x-if="selectedProxy">
             <div>
-              <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
-                <div class="card-flat rounded-lg px-3 py-2">
+              <div class="details-summary-grid">
+                <div class="details-summary-card">
                   <div class="text-xs text-muted">Status</div>
                   <div
                     class="text-sm font-medium"
@@ -1322,7 +1513,7 @@
                     x-text="selectedProxy.status ? 'Online' : 'Offline'"
                   ></div>
                 </div>
-                <div class="card-flat rounded-lg px-3 py-2">
+                <div class="details-summary-card">
                   <div class="text-xs text-muted">Latency</div>
                   <div
                     class="text-sm font-medium tabular-nums"
@@ -1330,14 +1521,14 @@
                     x-text="selectedProxy.latency"
                   ></div>
                 </div>
-                <div class="card-flat rounded-lg px-3 py-2">
+                <div class="details-summary-card">
                   <div class="text-xs text-muted">Protocol</div>
                   <div
                     class="text-sm font-medium text-primary"
                     x-text="selectedProxy.details?.protocol || 'n/a'"
                   ></div>
                 </div>
-                <div class="card-flat rounded-lg px-3 py-2">
+                <div class="details-summary-card">
                   <div class="text-xs text-muted">Transport</div>
                   <div
                     class="text-sm font-medium text-primary"
@@ -1346,29 +1537,39 @@
                 </div>
               </div>
 
-              <div class="card-flat rounded-lg overflow-hidden">
+              <div class="details-kv-list">
                 <template
                   x-for="item in selectedDetailRows"
                   :key="item.label"
                 >
                   <div
                     x-show="item.value !== undefined && item.value !== null && item.value !== ''"
-                    class="details-row grid grid-cols-3 gap-3 px-3 py-2 text-sm"
+                    class="details-row details-kv-row"
                   >
-                    <div class="text-xs text-muted" x-text="item.label"></div>
+                    <div class="details-kv-label" x-text="item.label"></div>
                     <div
-                      class="col-span-2 text-primary break-all"
+                      class="details-kv-value"
                       x-text="formatDetailValue(item.value)"
                     ></div>
                   </div>
                 </template>
               </div>
 
+              <template x-if="selectedProxy.details?.generatedConfig">
+                <div>
+                  <div class="details-section-title">Generated Xray config</div>
+                  <pre
+                    class="details-json"
+                    x-text="prettyJSON(selectedProxy.details.generatedConfig)"
+                  ></pre>
+                </div>
+              </template>
+
               <template x-if="selectedProxy.details?.rawXhttpSettings">
                 <div class="mt-4">
-                  <div class="text-xs text-muted mb-2">Raw XHTTP settings</div>
+                  <div class="details-section-title">Raw XHTTP settings</div>
                   <pre
-                    class="card-flat rounded-lg p-3 text-xs text-primary overflow-x-auto"
+                    class="details-json"
                     x-text="prettyJSON(selectedProxy.details.rawXhttpSettings)"
                   ></pre>
                 </div>
@@ -1378,29 +1579,29 @@
 
           <template x-if="selectedGroup">
             <div>
-              <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
-                <div class="card-flat rounded-lg px-3 py-2">
+              <div class="details-summary-grid">
+                <div class="details-summary-card">
                   <div class="text-xs text-muted">Configs</div>
                   <div
                     class="text-sm font-medium text-primary"
                     x-text="selectedGroup.children.length"
                   ></div>
                 </div>
-                <div class="card-flat rounded-lg px-3 py-2">
+                <div class="details-summary-card">
                   <div class="text-xs text-muted">Online</div>
                   <div
                     class="text-sm font-medium text-online"
                     x-text="selectedGroup.online"
                   ></div>
                 </div>
-                <div class="card-flat rounded-lg px-3 py-2">
+                <div class="details-summary-card">
                   <div class="text-xs text-muted">Offline</div>
                   <div
                     class="text-sm font-medium text-offline"
                     x-text="selectedGroup.offline"
                   ></div>
                 </div>
-                <div class="card-flat rounded-lg px-3 py-2">
+                <div class="details-summary-card">
                   <div class="text-xs text-muted">Avg Latency</div>
                   <div
                     class="text-sm font-medium tabular-nums"
@@ -1418,7 +1619,7 @@
                   <button
                     type="button"
                     @click.stop.prevent="openDetails(proxy)"
-                    class="details-row w-full px-3 py-2 flex items-center gap-3 text-left hover:bg-white/5"
+                    class="details-row details-child-row w-full px-3 py-2 flex items-center gap-3 text-left"
                   >
                     <div
                       class="w-2 h-2 rounded-full flex-shrink-0"
@@ -1426,11 +1627,11 @@
                     ></div>
                     <div class="flex-1 min-w-0">
                       <div
-                        class="text-sm text-primary truncate"
+                        class="proxy-name text-sm text-primary"
                         x-text="childDisplayName(proxy)"
                       ></div>
                       <div
-                        class="text-xs text-muted truncate"
+                        class="proxy-meta text-xs text-muted"
                         x-text="proxy.details ? proxy.details.transport + ' · ' + proxy.details.security + ' · ' + proxy.details.address + ':' + proxy.details.port : proxy.serverInfo"
                       ></div>
                     </div>
@@ -1799,11 +2000,14 @@
           },
 
           childDisplayName(proxy) {
-            const groupName = proxy.group?.name;
-            if (!groupName) return this.displayName(proxy.name);
+            const fullName = this.displayName(proxy.name);
+            const groupName = this.displayName(proxy.group?.name);
+            if (!groupName) return fullName;
+
             const prefix = groupName + ' - ';
-            const name = proxy.name.startsWith(prefix) ? proxy.name.slice(prefix.length) : proxy.name;
-            return this.displayName(name.replace(/^[-\s]+/, ''));
+            if (fullName.startsWith(prefix)) return this.displayName(fullName.slice(prefix.length));
+            if (fullName.startsWith(groupName)) return this.displayName(fullName.slice(groupName.length).replace(/^[-\s:·]+/, '')) || fullName;
+            return fullName;
           },
 
           displayName(value) {
