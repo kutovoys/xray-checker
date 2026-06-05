@@ -129,7 +129,7 @@ func ConfigStatusHandler(proxyChecker *checker.ProxyChecker) http.HandlerFunc {
 			return
 		}
 
-		status, latency, err := proxyChecker.GetProxyStatus(found.Name)
+		status, latency, err := proxyChecker.GetProxyStatus(found)
 		if err != nil {
 			http.Error(w, "Status not available", http.StatusNotFound)
 			return
@@ -159,7 +159,7 @@ func RegisterConfigEndpoints(proxies []*models.ProxyConfig, proxyChecker *checke
 
 		endpoint := fmt.Sprintf("./config/%s", proxy.StableID)
 
-		status, latency, _ := proxyChecker.GetProxyStatus(proxy.Name)
+		status, latency, _ := proxyChecker.GetProxyStatus(proxy)
 
 		endpoints = append(endpoints, EndpointInfo{
 			Name:       proxy.Name,

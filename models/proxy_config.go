@@ -81,6 +81,15 @@ func (pc *ProxyConfig) GenerateStableID() string {
 
 	idComponents = append(idComponents, pc.Server)
 	idComponents = append(idComponents, fmt.Sprintf("%d", pc.Port))
+	idComponents = append(idComponents, fmt.Sprintf("%d", pc.Index))
+
+	if pc.Name != "" {
+		idComponents = append(idComponents, pc.Name)
+	}
+
+	if pc.SubName != "" {
+		idComponents = append(idComponents, pc.SubName)
+	}
 
 	switch pc.Protocol {
 	case "vless", "vmess":
@@ -110,6 +119,34 @@ func (pc *ProxyConfig) GenerateStableID() string {
 
 	if pc.PublicKey != "" {
 		idComponents = append(idComponents, pc.PublicKey)
+	}
+
+	if pc.ShortID != "" {
+		idComponents = append(idComponents, pc.ShortID)
+	}
+
+	if pc.Flow != "" {
+		idComponents = append(idComponents, pc.Flow)
+	}
+
+	if pc.Host != "" {
+		idComponents = append(idComponents, pc.Host)
+	}
+
+	if pc.Path != "" {
+		idComponents = append(idComponents, pc.Path)
+	}
+
+	if pc.ServiceName != "" {
+		idComponents = append(idComponents, pc.ServiceName)
+	}
+
+	if pc.Mode != "" {
+		idComponents = append(idComponents, pc.Mode)
+	}
+
+	if pc.RawXhttpSettings != "" {
+		idComponents = append(idComponents, pc.RawXhttpSettings)
 	}
 
 	idString := strings.Join(idComponents, "|")

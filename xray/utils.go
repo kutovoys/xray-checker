@@ -7,10 +7,7 @@ import (
 func PrepareProxyConfigs(proxies []*models.ProxyConfig) {
 	for i := range proxies {
 		proxies[i].Index = i
-
-		if proxies[i].StableID == "" {
-			proxies[i].StableID = proxies[i].GenerateStableID()
-		}
+		proxies[i].StableID = proxies[i].GenerateStableID()
 	}
 }
 
@@ -23,17 +20,11 @@ func IsConfigsEqual(old, new []*models.ProxyConfig) bool {
 	newMap := make(map[string]bool)
 
 	for _, cfg := range old {
-		if cfg.StableID == "" {
-			cfg.StableID = cfg.GenerateStableID()
-		}
-		oldMap[cfg.StableID] = true
+		oldMap[cfg.GenerateStableID()] = true
 	}
 
 	for _, cfg := range new {
-		if cfg.StableID == "" {
-			cfg.StableID = cfg.GenerateStableID()
-		}
-		newMap[cfg.StableID] = true
+		newMap[cfg.GenerateStableID()] = true
 	}
 
 	for id := range oldMap {

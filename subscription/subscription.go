@@ -141,6 +141,7 @@ func ReadFromMultipleSources(urls []string) ([]*models.ProxyConfig, error) {
 
 	for i := range allConfigs {
 		allConfigs[i].Index = i
+		allConfigs[i].StableID = allConfigs[i].GenerateStableID()
 	}
 
 	logger.Debug("Total: %d proxies from %d/%d subscriptions", len(allConfigs), successCount, len(urls))

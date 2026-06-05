@@ -83,14 +83,7 @@ func (pc *ProxyChecker) checkProxyInternal(proxy *models.ProxyConfig, expectedGe
 		proxy.StableID = proxy.GenerateStableID()
 	}
 
-	metricKey := fmt.Sprintf("%s|%s:%d|%s|%s|%s",
-		proxy.Protocol,
-		proxy.Server,
-		proxy.Port,
-		proxy.Name,
-		proxy.SubName,
-		proxy.StableID,
-	)
+	metricKey := proxyMetricKey(proxy)
 
 	isGenerationValid := func() bool {
 		if !checkGeneration {
@@ -366,27 +359,27 @@ func (pc *ProxyChecker) CheckAllProxies() {
 	wg.Wait()
 }
 
-func (pc *ProxyChecker) GetProxyStatus(name string) (bool, time.Duration, error) {
-	pc.mu.RLock()
-	var metricKey string
-	for _, proxy := range pc.proxies {
-		if proxy.Name == name {
-			if proxy.StableID == "" {
-				proxy.StableID = proxy.GenerateStableID()
-			}
-
-			metricKey = fmt.Sprintf("%s|%s:%d|%s|%s|%s",
-				proxy.Protocol,
-				proxy.Server,
-				proxy.Port,
-				proxy.Name,
-				proxy.SubName,
-				proxy.StableID,
-			)
-			break
-		}
+func proxyMetricKey(proxy *models.ProxyConfig) string {
+	if proxy.StableID == "" {
+		proxy.StableID = proxy.GenerateStableID()
 	}
-	pc.mu.RUnlock()
+
+	return fmt.Sprintf("%s|%s:%d|%s|%s|%s",
+		proxy.Protocol,
+		proxy.Server,
+		proxy.Port,
+		proxy.Name,
+		proxy.SubName,
+		proxy.StableID,
+	)
+}
+
+func (pc *ProxyChecker) GetProxyStatus(proxy *models.ProxyConfig) (bool, time.Duration, error) {
+	if proxy == nil {
+		return false, 0, fmt.Errorf("proxy not found")
+	}
+
+	metricKey := proxyMetricKey(proxy)
 
 	if metricKey == "" {
 		return false, 0, fmt.Errorf("proxy not found")
