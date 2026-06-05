@@ -3,6 +3,7 @@ package web
 import (
 	"bytes"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -23,6 +24,13 @@ func init() {
 				return "n/a"
 			}
 			return fmt.Sprintf("%dms", d.Milliseconds())
+		},
+		"toJSON": func(v interface{}) template.JS {
+			b, err := json.Marshal(v)
+			if err != nil {
+				return "[]"
+			}
+			return template.JS(b)
 		},
 	}
 

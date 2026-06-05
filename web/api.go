@@ -16,16 +16,18 @@ import (
 var openAPISpec []byte
 
 type ProxyInfo struct {
-	Index     int    `json:"index"`
-	StableID  string `json:"stableId"`
-	Name      string `json:"name"`
-	SubName   string `json:"subName"`
-	Server    string `json:"server"`
-	Port      int    `json:"port"`
-	Protocol  string `json:"protocol"`
-	ProxyPort int    `json:"proxyPort"`
-	Online    bool   `json:"online"`
-	LatencyMs int64  `json:"latencyMs"`
+	Index     int             `json:"index"`
+	StableID  string          `json:"stableId"`
+	Name      string          `json:"name"`
+	SubName   string          `json:"subName"`
+	Group     *ProxyGroupInfo `json:"group,omitempty"`
+	Server    string          `json:"server"`
+	Port      int             `json:"port"`
+	Protocol  string          `json:"protocol"`
+	ProxyPort int             `json:"proxyPort"`
+	Online    bool            `json:"online"`
+	LatencyMs int64           `json:"latencyMs"`
+	Details   *ProxyDetails   `json:"details,omitempty"`
 }
 
 type PublicProxyInfo struct {
@@ -33,6 +35,59 @@ type PublicProxyInfo struct {
 	Name      string `json:"name"`
 	Online    bool   `json:"online"`
 	LatencyMs int64  `json:"latencyMs"`
+}
+
+type ProxyGroupInfo struct {
+	Key       string `json:"key,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Index     int    `json:"index"`
+	Size      int    `json:"size"`
+	Collapsed bool   `json:"collapsed"`
+}
+
+type ProxyCredentialInfo struct {
+	Type  string `json:"type,omitempty"`
+	Value string `json:"value,omitempty"`
+}
+
+type ProxyInboundInfo struct {
+	Listen   string `json:"listen"`
+	Port     int    `json:"port"`
+	Protocol string `json:"protocol"`
+	Tag      string `json:"tag"`
+}
+
+type ProxyOutboundInfo struct {
+	Tag      string `json:"tag"`
+	Protocol string `json:"protocol"`
+	Address  string `json:"address"`
+	Port     int    `json:"port"`
+}
+
+type ProxyDetails struct {
+	Protocol         string                 `json:"protocol"`
+	Address          string                 `json:"address"`
+	Port             int                    `json:"port"`
+	Transport        string                 `json:"transport"`
+	Security         string                 `json:"security"`
+	SNI              string                 `json:"sni,omitempty"`
+	Host             string                 `json:"host,omitempty"`
+	Path             string                 `json:"path,omitempty"`
+	Mode             string                 `json:"mode,omitempty"`
+	Flow             string                 `json:"flow,omitempty"`
+	Encryption       string                 `json:"encryption,omitempty"`
+	HeaderType       string                 `json:"headerType,omitempty"`
+	Fingerprint      string                 `json:"fingerprint,omitempty"`
+	PublicKey        string                 `json:"publicKey,omitempty"`
+	ShortID          string                 `json:"shortId,omitempty"`
+	ServiceName      string                 `json:"serviceName,omitempty"`
+	MultiMode        bool                   `json:"multiMode,omitempty"`
+	AllowInsecure    bool                   `json:"allowInsecure,omitempty"`
+	ALPN             []string               `json:"alpn,omitempty"`
+	Credential       ProxyCredentialInfo    `json:"credential,omitempty"`
+	Inbound          ProxyInboundInfo       `json:"inbound"`
+	Outbound         ProxyOutboundInfo      `json:"outbound"`
+	RawXhttpSettings map[string]interface{} `json:"rawXhttpSettings,omitempty"`
 }
 
 type StatusResponse struct {
@@ -87,12 +142,13 @@ func writeError(w http.ResponseWriter, message string, code int) {
 	})
 }
 
-func toProxyInfo(proxy *models.ProxyConfig, online bool, latency time.Duration, startPort int) ProxyInfo {
-	return ProxyInfo{
+func toProxyInfo(proxy *models.ProxyConfig, online bool, latency time.Duration, startPort int, includeDetails bool) ProxyInfo {
+	info := ProxyInfo{
 		Index:     proxy.Index,
 		StableID:  proxy.StableID,
 		Name:      proxy.Name,
 		SubName:   proxy.SubName,
+		Group:     toProxyGroupInfo(proxy),
 		Server:    proxy.Server,
 		Port:      proxy.Port,
 		Protocol:  proxy.Protocol,
@@ -100,6 +156,92 @@ func toProxyInfo(proxy *models.ProxyConfig, online bool, latency time.Duration, 
 		Online:    online,
 		LatencyMs: latency.Milliseconds(),
 	}
+	if includeDetails {
+		info.Details = toProxyDetails(proxy, startPort)
+	}
+	return info
+}
+
+func toProxyGroupInfo(proxy *models.ProxyConfig) *ProxyGroupInfo {
+	if proxy.GroupName == "" || proxy.GroupSize <= 1 {
+		return nil
+	}
+
+	keyBytes, _ := json.Marshal([]string{proxy.SubName, proxy.GroupName})
+	return &ProxyGroupInfo{
+		Key:       string(keyBytes),
+		Name:      proxy.GroupName,
+		Index:     proxy.GroupIndex,
+		Size:      proxy.GroupSize,
+		Collapsed: true,
+	}
+}
+
+func toProxyDetails(proxy *models.ProxyConfig, startPort int) *ProxyDetails {
+	details := &ProxyDetails{
+		Protocol:      proxy.Protocol,
+		Address:       proxy.Server,
+		Port:          proxy.Port,
+		Transport:     proxy.GetTransportType(),
+		Security:      proxy.GetSecurityType(),
+		SNI:           proxy.SNI,
+		Host:          proxy.Host,
+		Path:          proxy.Path,
+		Mode:          proxy.Mode,
+		Flow:          proxy.Flow,
+		Encryption:    proxy.Encryption,
+		HeaderType:    proxy.HeaderType,
+		Fingerprint:   proxy.Fingerprint,
+		PublicKey:     proxy.PublicKey,
+		ShortID:       proxy.ShortID,
+		ServiceName:   proxy.ServiceName,
+		MultiMode:     proxy.MultiMode,
+		AllowInsecure: proxy.AllowInsecure,
+		ALPN:          proxy.ALPN,
+		Inbound: ProxyInboundInfo{
+			Listen:   "127.0.0.1",
+			Port:     startPort + proxy.Index,
+			Protocol: "socks",
+			Tag:      fmt.Sprintf("%s_%s_%d_Inbound", proxy.Name, proxy.Protocol, proxy.Index),
+		},
+		Outbound: ProxyOutboundInfo{
+			Tag:      fmt.Sprintf("%s_%d", proxy.Name, proxy.Index),
+			Protocol: proxy.Protocol,
+			Address:  proxy.Server,
+			Port:     proxy.Port,
+		},
+	}
+
+	switch proxy.Protocol {
+	case "vless", "vmess":
+		details.Credential = ProxyCredentialInfo{Type: "uuid", Value: maskMiddle(proxy.UUID)}
+	case "trojan", "shadowsocks":
+		details.Credential = ProxyCredentialInfo{Type: "password", Value: maskMiddle(proxy.Password)}
+	}
+
+	if proxy.Protocol == "shadowsocks" && proxy.Method != "" {
+		details.Credential.Type = "method/password"
+		details.Credential.Value = proxy.Method + " / " + maskMiddle(proxy.Password)
+	}
+
+	if proxy.RawXhttpSettings != "" {
+		var raw map[string]interface{}
+		if err := json.Unmarshal([]byte(proxy.RawXhttpSettings), &raw); err == nil {
+			details.RawXhttpSettings = raw
+		}
+	}
+
+	return details
+}
+
+func maskMiddle(value string) string {
+	if value == "" {
+		return ""
+	}
+	if len(value) <= 8 {
+		return "****"
+	}
+	return value[:4] + "..." + value[len(value)-4:]
 }
 
 // APIPublicProxiesHandler returns public info for all proxies (no auth required)
@@ -139,10 +281,11 @@ func APIProxiesHandler(proxyChecker *checker.ProxyChecker, startPort int) http.H
 	return func(w http.ResponseWriter, r *http.Request) {
 		proxies := proxyChecker.GetProxies()
 		result := make([]ProxyInfo, 0, len(proxies))
+		includeDetails := config.CLIConfig.Web.ShowServerDetails
 
 		for _, proxy := range proxies {
 			status, latency, _ := proxyChecker.GetProxyStatus(proxy)
-			result = append(result, toProxyInfo(proxy, status, latency, startPort))
+			result = append(result, toProxyInfo(proxy, status, latency, startPort, includeDetails))
 		}
 
 		writeJSON(w, result)
@@ -180,7 +323,7 @@ func APIProxyHandler(proxyChecker *checker.ProxyChecker, startPort int) http.Han
 		}
 
 		status, latency, _ := proxyChecker.GetProxyStatus(proxy)
-		writeJSON(w, toProxyInfo(proxy, status, latency, startPort))
+		writeJSON(w, toProxyInfo(proxy, status, latency, startPort, config.CLIConfig.Web.ShowServerDetails))
 	}
 }
 

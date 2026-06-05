@@ -34,7 +34,7 @@ paths:
   /api/v1/proxies:
     get:
       summary: List all proxies
-      description: Returns a list of all proxies with status information
+      description: Returns a list of all proxies with status information. Configuration details are included only when WEB_SHOW_DETAILS=true.
       tags:
         - Proxies
       responses:
@@ -55,7 +55,7 @@ paths:
   /api/v1/proxies/{stableID}:
     get:
       summary: Get proxy by ID
-      description: Returns information for a specific proxy
+      description: Returns information for a specific proxy. Configuration details are included only when WEB_SHOW_DETAILS=true.
       tags:
         - Proxies
       parameters:
@@ -229,6 +229,8 @@ components:
           type: string
           description: Subscription name this proxy belongs to
           example: "Premium VPN"
+        group:
+          $ref: '#/components/schemas/ProxyGroupInfo'
         server:
           type: string
           example: "192.168.1.1"
@@ -249,6 +251,154 @@ components:
           type: integer
           format: int64
           example: 150
+        details:
+          allOf:
+            - $ref: '#/components/schemas/ProxyDetails'
+          description: Optional configuration details, present only when WEB_SHOW_DETAILS=true.
+
+    ProxyGroupInfo:
+      type: object
+      description: Metadata for JSON subscription balancer groups.
+      properties:
+        key:
+          type: string
+          description: Stable group key encoded as a JSON tuple of subscription name and group name.
+          example: '["Premium VPN","Germany"]'
+        name:
+          type: string
+          example: "Germany"
+        index:
+          type: integer
+          description: Zero-based index inside the group.
+          example: 0
+        size:
+          type: integer
+          description: Number of proxies in the group.
+          example: 3
+        collapsed:
+          type: boolean
+          example: true
+
+    ProxyCredentialInfo:
+      type: object
+      properties:
+        type:
+          type: string
+          example: "uuid"
+        value:
+          type: string
+          description: Masked credential value.
+          example: "abcd...1234"
+
+    ProxyInboundInfo:
+      type: object
+      properties:
+        listen:
+          type: string
+          example: "127.0.0.1"
+        port:
+          type: integer
+          example: 10000
+        protocol:
+          type: string
+          example: "socks"
+        tag:
+          type: string
+          example: "US-Server-1_vless_0_Inbound"
+
+    ProxyOutboundInfo:
+      type: object
+      properties:
+        tag:
+          type: string
+          example: "US-Server-1_0"
+        protocol:
+          type: string
+          enum: [vless, vmess, trojan, shadowsocks]
+          example: "vless"
+        address:
+          type: string
+          example: "192.168.1.1"
+        port:
+          type: integer
+          example: 443
+
+    ProxyDetails:
+      type: object
+      properties:
+        protocol:
+          type: string
+          enum: [vless, vmess, trojan, shadowsocks]
+          example: "vless"
+        address:
+          type: string
+          example: "192.168.1.1"
+        port:
+          type: integer
+          example: 443
+        transport:
+          type: string
+          example: "tcp"
+        security:
+          type: string
+          example: "reality"
+        sni:
+          type: string
+          example: "example.com"
+        host:
+          type: string
+          example: "example.com"
+        path:
+          type: string
+          example: "/ws"
+        mode:
+          type: string
+          example: "auto"
+        flow:
+          type: string
+          example: "xtls-rprx-vision"
+        encryption:
+          type: string
+          example: "none"
+        headerType:
+          type: string
+          example: "none"
+        fingerprint:
+          type: string
+          example: "chrome"
+        publicKey:
+          type: string
+          example: "public-key"
+        shortId:
+          type: string
+          example: "abcd1234"
+        serviceName:
+          type: string
+          example: "grpc-service"
+        multiMode:
+          type: boolean
+          example: false
+        allowInsecure:
+          type: boolean
+          example: false
+        alpn:
+          type: array
+          items:
+            type: string
+          example: ["h2", "http/1.1"]
+        credential:
+          $ref: '#/components/schemas/ProxyCredentialInfo'
+        inbound:
+          $ref: '#/components/schemas/ProxyInboundInfo'
+        outbound:
+          $ref: '#/components/schemas/ProxyOutboundInfo'
+        rawXhttpSettings:
+          type: object
+          additionalProperties: true
+          example:
+            host: "example.com"
+            path: "/xhttp"
+            mode: "auto"
 
     StatusResponse:
       type: object
@@ -322,4 +472,3 @@ components:
         ip:
           type: string
           example: "203.0.113.1"
-

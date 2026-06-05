@@ -19,14 +19,19 @@ var (
 )
 
 type EndpointInfo struct {
-	Name       string
-	ServerInfo string
-	URL        string
-	ProxyPort  int
-	Index      int
-	Status     bool
-	Latency    time.Duration
-	StableID   string
+	Name         string          `json:"name"`
+	ServerInfo   string          `json:"serverInfo,omitempty"`
+	URL          string          `json:"url,omitempty"`
+	ProxyPort    int             `json:"proxyPort,omitempty"`
+	Index        int             `json:"index"`
+	Status       bool            `json:"status"`
+	Latency      time.Duration   `json:"-"`
+	LatencyLabel string          `json:"latency"`
+	LatencyMs    int64           `json:"latencyMs"`
+	StableID     string          `json:"stableId"`
+	SubName      string          `json:"subName,omitempty"`
+	Group        *ProxyGroupInfo `json:"group,omitempty"`
+	Details      *ProxyDetails   `json:"details,omitempty"`
 }
 
 func IndexHandler(version string, proxyChecker *checker.ProxyChecker) http.HandlerFunc {
@@ -49,17 +54,26 @@ func IndexHandler(version string, proxyChecker *checker.ProxyChecker) http.Handl
 			showServerDetails = false
 		}
 
-		endpoints := allEndpoints
-		if isPublic {
-			endpoints = make([]EndpointInfo, len(allEndpoints))
-			for i, ep := range allEndpoints {
-				endpoints[i] = EndpointInfo{
-					Name:     ep.Name,
-					Index:    ep.Index,
-					Status:   ep.Status,
-					Latency:  ep.Latency,
-					StableID: ep.StableID,
-				}
+		endpoints := make([]EndpointInfo, len(allEndpoints))
+		for i, ep := range allEndpoints {
+			endpoints[i] = EndpointInfo{
+				Name:         ep.Name,
+				Index:        ep.Index,
+				Status:       ep.Status,
+				Latency:      ep.Latency,
+				LatencyLabel: ep.LatencyLabel,
+				LatencyMs:    ep.LatencyMs,
+				StableID:     ep.StableID,
+				SubName:      ep.SubName,
+				Group:        ep.Group,
+			}
+			if !isPublic {
+				endpoints[i].URL = ep.URL
+			}
+			if showServerDetails {
+				endpoints[i].ServerInfo = ep.ServerInfo
+				endpoints[i].ProxyPort = ep.ProxyPort
+				endpoints[i].Details = ep.Details
 			}
 		}
 
@@ -162,20 +176,32 @@ func RegisterConfigEndpoints(proxies []*models.ProxyConfig, proxyChecker *checke
 		status, latency, _ := proxyChecker.GetProxyStatus(proxy)
 
 		endpoints = append(endpoints, EndpointInfo{
-			Name:       proxy.Name,
-			ServerInfo: fmt.Sprintf("%s:%d", proxy.Server, proxy.Port),
-			URL:        endpoint,
-			ProxyPort:  startPort + proxy.Index,
-			Index:      proxy.Index,
-			Status:     status,
-			Latency:    latency,
-			StableID:   proxy.StableID,
+			Name:         proxy.Name,
+			ServerInfo:   fmt.Sprintf("%s:%d", proxy.Server, proxy.Port),
+			URL:          endpoint,
+			ProxyPort:    startPort + proxy.Index,
+			Index:        proxy.Index,
+			Status:       status,
+			Latency:      latency,
+			LatencyLabel: formatLatency(latency),
+			LatencyMs:    latency.Milliseconds(),
+			StableID:     proxy.StableID,
+			SubName:      proxy.SubName,
+			Group:        toProxyGroupInfo(proxy),
+			Details:      toProxyDetails(proxy, startPort),
 		})
 	}
 
 	endpointsMu.Lock()
 	registeredEndpoints = endpoints
 	endpointsMu.Unlock()
+}
+
+func formatLatency(d time.Duration) string {
+	if d == 0 {
+		return "n/a"
+	}
+	return fmt.Sprintf("%dms", d.Milliseconds())
 }
 
 type PrefixServeMux struct {
