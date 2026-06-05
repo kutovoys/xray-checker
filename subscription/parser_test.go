@@ -43,6 +43,11 @@ func TestParseJSONConfigsNamesBalancerNodes(t *testing.T) {
 		if cfg.StableID != cfg.GenerateStableID() {
 			t.Fatalf("config %d StableID was not generated from final identity", i)
 		}
+		if i < 2 {
+			if cfg.GroupName != "Germany" || cfg.GroupIndex != i || cfg.GroupSize != 2 {
+				t.Fatalf("config %d group metadata = (%q, %d, %d), want (Germany, %d, 2)", i, cfg.GroupName, cfg.GroupIndex, cfg.GroupSize, i)
+			}
+		}
 	}
 }
 
@@ -76,6 +81,9 @@ func TestParseSingleConfigFileKeepsStartIndexForBalancerNodes(t *testing.T) {
 		}
 		if cfg.StableID != cfg.GenerateStableID() {
 			t.Fatalf("config %d StableID was not generated from final identity", i)
+		}
+		if cfg.GroupName != "Germany" || cfg.GroupIndex != i || cfg.GroupSize != 2 {
+			t.Fatalf("config %d group metadata = (%q, %d, %d), want (Germany, %d, 2)", i, cfg.GroupName, cfg.GroupIndex, cfg.GroupSize, i)
 		}
 	}
 }

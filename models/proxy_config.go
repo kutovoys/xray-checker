@@ -41,6 +41,9 @@ type ProxyConfig struct {
 	StableID         string
 	RawXhttpSettings string
 	SubName          string
+	GroupName        string
+	GroupIndex       int
+	GroupSize        int
 }
 
 func (pc *ProxyConfig) Validate() error {

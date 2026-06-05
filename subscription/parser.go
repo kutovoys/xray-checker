@@ -430,12 +430,20 @@ func (p *Parser) parseSingleJSONConfig(data []byte) ([]*models.ProxyConfig, erro
 
 func appendJSONConfigGroup(dst []*models.ProxyConfig, group []*models.ProxyConfig, remarks string, startIndex int) ([]*models.ProxyConfig, int) {
 	if remarks != "" {
-		for _, pc := range group {
+		for groupIndex, pc := range group {
+			pc.GroupName = remarks
+			pc.GroupIndex = groupIndex
+			pc.GroupSize = len(group)
 			if len(group) > 1 {
 				pc.Name = fmt.Sprintf("%s - %s", remarks, pc.Server)
 			} else {
 				pc.Name = remarks
 			}
+		}
+	} else {
+		for groupIndex, pc := range group {
+			pc.GroupIndex = groupIndex
+			pc.GroupSize = len(group)
 		}
 	}
 
