@@ -77,6 +77,7 @@ func ReadFromMultipleSources(urls []string) ([]*models.ProxyConfig, error) {
 		}
 		for _, cfg := range configs {
 			cfg.SubName = name
+			cfg.StableID = cfg.GenerateStableID()
 		}
 		if name != "" {
 			SetSubscriptionName(name)
@@ -97,6 +98,7 @@ func ReadFromMultipleSources(urls []string) ([]*models.ProxyConfig, error) {
 			configs, name, err := ReadFromSource(u)
 			for _, cfg := range configs {
 				cfg.SubName = name
+				cfg.StableID = cfg.GenerateStableID()
 			}
 			resultMu.Lock()
 			resultMap[u] = subscriptionResult{
