@@ -251,18 +251,8 @@ func (p *Parser) Parse(subscriptionData string) (*ParseResult, error) {
 // parseViaLibXray attempts to parse all configs at once via libXray.
 // Returns parsed configs or nil if parsing fails.
 func (p *Parser) parseViaLibXray(cleanedData []byte, originalData map[string]*originalLinkData) []*models.ProxyConfig {
-	base64Data := base64.StdEncoding.EncodeToString(cleanedData)
-
-	resultBase64 := libXray.ConvertShareLinksToXrayJson(base64Data)
-
-	resultBytes, err := base64.StdEncoding.DecodeString(resultBase64)
+	response, err := p.parseShareTextViaLibXray(cleanedData)
 	if err != nil {
-		logger.Debug("Failed to decode libXray response: %v", err)
-		return nil
-	}
-
-	var response libXrayResponse
-	if err := json.Unmarshal(resultBytes, &response); err != nil {
 		logger.Debug("Failed to parse libXray response: %v", err)
 		return nil
 	}
@@ -287,18 +277,8 @@ func (p *Parser) parseLineByLine(cleanedData []byte, originalData map[string]*or
 			continue
 		}
 
-		lineBase64 := base64.StdEncoding.EncodeToString([]byte(line))
-		resultBase64 := libXray.ConvertShareLinksToXrayJson(lineBase64)
-
-		resultBytes, err := base64.StdEncoding.DecodeString(resultBase64)
+		response, err := p.parseShareTextViaLibXray([]byte(line))
 		if err != nil {
-			logger.Warn("Skipping invalid config line (decode error): %.50s...", line)
-			skippedCount++
-			continue
-		}
-
-		var response libXrayResponse
-		if err := json.Unmarshal(resultBytes, &response); err != nil {
 			logger.Warn("Skipping invalid config line (parse error): %.50s...", line)
 			skippedCount++
 			continue
@@ -325,6 +305,37 @@ func (p *Parser) parseLineByLine(cleanedData []byte, originalData map[string]*or
 	}
 
 	return allConfigs
+}
+
+// parseShareTextViaLibXray adapts the file-based libxray API to the parser's in-memory flow.
+func (p *Parser) parseShareTextViaLibXray(data []byte) (*libXrayResponse, error) {
+	tmpDir, err := os.MkdirTemp("", "xray-checker-libxray-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	inputPath := filepath.Join(tmpDir, "subscription.txt")
+	outputPath := filepath.Join(tmpDir, "xray.json")
+
+	if err := os.WriteFile(inputPath, data, 0600); err != nil {
+		return nil, err
+	}
+
+	if result := strings.TrimSpace(libXray.ParseShareText(inputPath, outputPath)); result != "" {
+		return &libXrayResponse{Success: false}, fmt.Errorf("%s", result)
+	}
+
+	output, err := os.ReadFile(outputPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if !json.Valid(output) {
+		return &libXrayResponse{Success: false}, fmt.Errorf("libXray returned invalid JSON")
+	}
+
+	return &libXrayResponse{Success: true, Data: json.RawMessage(output)}, nil
 }
 
 // extractOutbounds extracts proxy configs from libXray response data.

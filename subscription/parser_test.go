@@ -132,6 +132,30 @@ func TestParseJSONConfigsKeepsPortOne(t *testing.T) {
 	}
 }
 
+func TestParseShareLinkViaLibXray(t *testing.T) {
+	link := "vless://00000000-0000-0000-0000-000000000000@example.com:443?encryption=none&security=none&type=tcp#Example"
+
+	result, err := NewParser().Parse(link)
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	if len(result.Configs) != 1 {
+		t.Fatalf("got %d configs, want 1", len(result.Configs))
+	}
+
+	cfg := result.Configs[0]
+	if cfg.Protocol != "vless" {
+		t.Fatalf("protocol = %q, want vless", cfg.Protocol)
+	}
+	if cfg.Server != "example.com" {
+		t.Fatalf("server = %q, want example.com", cfg.Server)
+	}
+	if cfg.Port != 443 {
+		t.Fatalf("port = %d, want 443", cfg.Port)
+	}
+}
+
 func TestApplySubscriptionHeadersSupportsJSONFormatAndOverrides(t *testing.T) {
 	oldSubscription := config.CLIConfig.Subscription
 	oldVersion := config.Version

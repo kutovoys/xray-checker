@@ -11,6 +11,8 @@ import (
 	"xray-checker/config"
 	"xray-checker/models"
 	"xray-checker/xray"
+
+	libXray "github.com/xtls/libxray"
 )
 
 //go:embed openapi.yaml
@@ -111,10 +113,11 @@ type ConfigResponse struct {
 }
 
 type SystemInfoResponse struct {
-	Version   string `json:"version"`
-	Uptime    string `json:"uptime"`
-	UptimeSec int64  `json:"uptimeSec"`
-	Instance  string `json:"instance"`
+	Version         string `json:"version"`
+	XrayCoreVersion string `json:"xrayCoreVersion"`
+	Uptime          string `json:"uptime"`
+	UptimeSec       int64  `json:"uptimeSec"`
+	Instance        string `json:"instance"`
 }
 
 type SystemIPResponse struct {
@@ -469,10 +472,11 @@ func APISystemInfoHandler(version string, startTime time.Time) http.HandlerFunc 
 	return func(w http.ResponseWriter, r *http.Request) {
 		uptime := time.Since(startTime)
 		writeJSON(w, SystemInfoResponse{
-			Version:   version,
-			Uptime:    formatDuration(uptime),
-			UptimeSec: int64(uptime.Seconds()),
-			Instance:  config.CLIConfig.Metrics.Instance,
+			Version:         version,
+			XrayCoreVersion: libXray.XrayVersion(),
+			Uptime:          formatDuration(uptime),
+			UptimeSec:       int64(uptime.Seconds()),
+			Instance:        config.CLIConfig.Metrics.Instance,
 		})
 	}
 }
