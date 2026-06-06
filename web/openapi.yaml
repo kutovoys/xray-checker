@@ -470,6 +470,9 @@ components:
         version:
           type: string
           example: "1.0.0"
+        xrayCoreVersion:
+          type: string
+          example: "26.3.27"
         uptime:
           type: string
           example: "1h 30m 45s"
