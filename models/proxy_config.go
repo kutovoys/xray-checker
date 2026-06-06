@@ -39,6 +39,7 @@ type ProxyConfig struct {
 	Index            int
 	Settings         map[string]string
 	StableID         string
+	RawKcpSettings   string
 	RawXhttpSettings string
 	SubName          string
 	GroupName        string
@@ -150,6 +151,10 @@ func (pc *ProxyConfig) GenerateStableID() string {
 
 	if pc.RawXhttpSettings != "" {
 		idComponents = append(idComponents, pc.RawXhttpSettings)
+	}
+
+	if pc.RawKcpSettings != "" {
+		idComponents = append(idComponents, pc.RawKcpSettings)
 	}
 
 	idString := strings.Join(idComponents, "|")

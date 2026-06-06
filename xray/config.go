@@ -255,6 +255,14 @@ func (g *ConfigGenerator) generateStreamSettings(proxy *models.ProxyConfig) map[
 		}
 		ss["wsSettings"] = wsSettings
 
+	case "kcp":
+		if proxy.RawKcpSettings != "" {
+			var rawSettings map[string]interface{}
+			if err := json.Unmarshal([]byte(proxy.RawKcpSettings), &rawSettings); err == nil {
+				ss["kcpSettings"] = rawSettings
+			}
+		}
+
 	case "grpc":
 		ss["grpcSettings"] = map[string]interface{}{
 			"serviceName": proxy.GetServiceName(),

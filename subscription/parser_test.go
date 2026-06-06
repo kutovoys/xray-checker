@@ -3,6 +3,7 @@ package subscription
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"xray-checker/config"
@@ -132,6 +133,28 @@ func TestParseJSONConfigsKeepsPortOne(t *testing.T) {
 	}
 }
 
+func TestParseJSONConfigsKeepsKcpSettings(t *testing.T) {
+	data := fmt.Sprintf(`[{"remarks":"KCP","outbounds":[%s]}]`, testVLESSKcpOutbound("kcp.example.com"))
+
+	configs, err := NewParser().parseJSONConfigs([]byte(data))
+	if err != nil {
+		t.Fatalf("parseJSONConfigs returned error: %v", err)
+	}
+
+	if len(configs) != 1 {
+		t.Fatalf("got %d configs, want 1", len(configs))
+	}
+	if configs[0].Type != "kcp" {
+		t.Fatalf("transport = %q, want kcp", configs[0].Type)
+	}
+	if configs[0].RawKcpSettings == "" {
+		t.Fatal("RawKcpSettings is empty")
+	}
+	if !strings.Contains(configs[0].RawKcpSettings, `"seed":"frdm-seed"`) {
+		t.Fatalf("RawKcpSettings = %s, want seed", configs[0].RawKcpSettings)
+	}
+}
+
 func TestParseShareLinkViaLibXray(t *testing.T) {
 	link := "vless://00000000-0000-0000-0000-000000000000@example.com:443?encryption=none&security=none&type=tcp#Example"
 
@@ -217,4 +240,31 @@ func testVLESSOutboundWithPort(server string, port int) string {
 			"security":"none"
 		}
 	}`, server, server, port)
+}
+
+func testVLESSKcpOutbound(server string) string {
+	return fmt.Sprintf(`{
+		"protocol":"vless",
+		"tag":"%s",
+		"settings":{
+			"vnext":[{
+				"address":"%s",
+				"port":8443,
+				"users":[{
+					"id":"00000000-0000-0000-0000-000000000000",
+					"encryption":"none"
+				}]
+			}]
+		},
+		"streamSettings":{
+			"network":"kcp",
+			"security":"none",
+			"kcpSettings":{
+				"seed":"frdm-seed",
+				"header":{"type":"dtls"},
+				"mtu":1350,
+				"tti":20
+			}
+		}
+	}`, server, server)
 }
