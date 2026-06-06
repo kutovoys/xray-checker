@@ -318,25 +318,34 @@
       }
       .group-panel {
         max-height: 0;
+        border-width: 0;
         opacity: 0;
         overflow: hidden;
         pointer-events: none;
-        transition: max-height 0.28s ease, opacity 0.2s ease;
-        visibility: hidden;
+        transform: translateY(-0.25rem);
+        transition: max-height 0.32s ease, opacity 0.2s ease,
+          transform 0.28s ease, margin-top 0.28s ease, border-color 0.2s ease;
       }
       .group-panel.expanded {
         max-height: min(34rem, 62vh);
+        border-width: 1px;
+        border-color: rgba(41, 75, 255, 0.55);
+        margin-top: 0.5rem;
         opacity: 1;
         pointer-events: auto;
-        visibility: visible;
+        transform: translateY(0);
       }
       .group-panel-scroll {
         display: grid;
         grid-template-columns: minmax(0, 1fr);
+        min-height: 0;
         max-height: min(32rem, 58vh);
         overflow-y: auto;
       }
-      @media (min-width: 1024px) {
+      .group-panel:not(.expanded) .group-panel-scroll {
+        overflow: hidden;
+      }
+      @media (min-width: 768px) {
         .group-panel-scroll {
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
@@ -347,32 +356,56 @@
         }
       }
       .group-chevron {
+        position: absolute;
+        right: 0;
+        top: 50%;
+        transform: translateY(-50%);
         transition: transform 0.18s ease;
       }
       .group-chevron.expanded {
-        transform: rotate(90deg);
+        transform: translateY(-50%) rotate(90deg);
       }
       .proxy-grid {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr);
+        display: flex;
+        flex-direction: column;
         gap: 0.5rem;
         margin-bottom: 1rem;
       }
+      .proxy-grid-section {
+        display: flex;
+        flex-direction: column;
+      }
+      .proxy-grid-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        align-items: start;
+        gap: 0.5rem;
+      }
       @media (min-width: 768px) {
-        .proxy-grid {
+        .proxy-grid-row {
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
       }
       @media (min-width: 1280px) {
-        .proxy-grid {
+        .proxy-grid-row {
           grid-template-columns: repeat(3, minmax(0, 1fr));
         }
       }
       .display-row-wrapper {
-        display: contents;
+        min-width: 0;
       }
-      .group-card-expanded {
-        grid-column: 1 / -1;
+      .proxy-card-expanded {
+        position: relative;
+        border-color: rgba(41, 75, 255, 0.75);
+        box-shadow: 0 0 0 1px rgba(41, 75, 255, 0.28),
+          0 12px 28px rgba(0, 0, 0, 0.18);
+      }
+      .proxy-card-expanded::before {
+        content: "";
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 3px;
+        background: var(--accent);
       }
       .proxy-card-row {
         display: flex;
@@ -381,12 +414,14 @@
       }
       .group-summary-button {
         display: grid;
-        grid-template-columns: auto auto minmax(0, 1fr);
+        grid-template-columns: auto minmax(0, 1fr);
         align-items: center;
         justify-items: start;
         gap: 0.75rem;
+        position: relative;
         width: 100%;
         min-width: 0;
+        padding-right: 1.5rem;
         text-align: left;
       }
       .group-summary-text {
@@ -405,8 +440,16 @@
         white-space: normal;
         overflow-wrap: anywhere;
       }
-      .local-proxy-port {
-        white-space: nowrap;
+      .proxy-actions {
+        display: grid;
+        grid-template-columns: 1.625rem;
+        gap: 0.5rem;
+        flex-shrink: 0;
+      }
+      @media (min-width: 640px) {
+        .proxy-actions-private {
+          grid-template-columns: repeat(2, 1.625rem);
+        }
       }
       .proxy-child-row {
         border-top: 1px solid var(--border);
@@ -763,7 +806,7 @@
         </div>
 
         <div class="flex items-center gap-2">
-          {{ if not .IsPublic }}
+          {{ if and (not .IsPublic) .Version (ne .Version "unknown") }}
           <span
             class="h-9 px-3 text-xs rounded-lg card-flat text-muted flex items-center"
             >{{.Version}}</span
@@ -1085,153 +1128,267 @@
         x-show="showProxies"
         class="proxy-grid"
       >
-        <template x-for="(row, idx) in displayRows" :key="row.key">
-          <div class="display-row-wrapper">
-            <template x-if="row.type === 'group'">
-              <div
-                class="proxy-card card rounded-lg overflow-hidden transition-all duration-150"
-                :class="[initialLoad && 'animate', isGroupExpanded(row.key) && 'group-card-expanded']"
-              >
-                <div class="proxy-card-row px-3 py-2.5">
-                  <button
-                    type="button"
-                    @click="toggleGroup(row.key)"
-                    class="group-summary-button flex-1"
-                    :aria-expanded="isGroupExpanded(row.key)"
-                  >
-                    <svg
-                      class="group-chevron w-3.5 h-3.5 text-muted flex-shrink-0"
-                      :class="isGroupExpanded(row.key) && 'expanded'"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
+        <template x-for="gridRow in displayGridRows" :key="gridRow.key">
+          <div class="proxy-grid-section">
+            <div class="proxy-grid-row">
+              <template x-for="row in gridRow.items" :key="row.key">
+                <div class="display-row-wrapper">
+                  <template x-if="row.type === 'group'">
+                    <div
+                      class="proxy-card card rounded-lg overflow-hidden transition-all duration-150"
+                      :class="[initialLoad && 'animate', isGroupExpanded(row.key) && 'proxy-card-expanded']"
                     >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M9 5l7 7-7 7"
-                      />
-                    </svg>
-                    <div class="relative flex-shrink-0">
-                      <div
-                        class="w-2 h-2 rounded-full"
-                        :class="groupStatusClass(row)"
-                      ></div>
-                    </div>
-                    <div class="group-summary-text">
-                      <span
-                        class="proxy-name text-sm text-primary block"
-                        x-text="displayName(row.name)"
-                      ></span>
-                      <span class="proxy-meta text-xs text-muted block">
-                        <span x-text="row.children.length"></span>
-                        configs ·
-                        <span x-text="row.online"></span>
-                        online ·
-                        <span x-text="row.offline"></span>
-                        offline
-                      </span>
-                    </div>
-                  </button>
-
-                  <div class="flex flex-col items-center gap-1 flex-shrink-0">
-                    <span
-                      class="text-xs tabular-nums"
-                      :class="latencyClass(row)"
-                      x-text="row.latency"
-                    ></span>
-                    <div class="flex items-center gap-0.5">
-                      <template x-for="i in 5" :key="i">
-                        <div
-                          class="latency-segment"
-                          :class="segmentClass(row.latencyMs, i)"
-                        ></div>
-                      </template>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    x-show="row.children.some(p => p.details)"
-                    @click.stop.prevent="openGroupDetails(row)"
-                    class="p-1.5 rounded text-muted btn-icon transition-all"
-                    title="Show config details"
-                  >
-                    <svg
-                      class="w-3.5 h-3.5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M13 16h-1v-4h-1m1-4h.01M12 3a9 9 0 110 18 9 9 0 010-18z"
-                      />
-                    </svg>
-                  </button>
-                </div>
-
-                <div
-                  class="group-panel"
-                  :class="isGroupExpanded(row.key) && 'expanded'"
-                >
-                  <div class="group-panel-scroll">
-                    <template
-                      x-for="proxy in row.children"
-                      :key="proxy.stableId"
-                    >
-                      <div
-                        class="proxy-child-row px-3 py-2 flex items-center gap-3"
-                      >
-                        <div class="relative proxy-child-status">
-                          <div
-                            class="w-2 h-2 rounded-full"
-                            :class="proxy.status ? 'status-online pulse' : 'status-offline'"
-                          ></div>
-                        </div>
-                        <div class="flex-1 min-w-0">
-                          {{ if .IsPublic }}
-                          <span
-                            class="proxy-name text-sm text-primary block"
-                            x-text="childDisplayName(proxy)"
-                          ></span>
-                          {{ else }}
-                          <a
-                            :href="proxy.url"
-                            target="_blank"
-                            class="proxy-name text-sm text-primary link-hover block transition-colors"
-                            x-text="childDisplayName(proxy)"
-                          ></a>
-                          {{ end }}
-                          <span
-                            x-show="proxy.serverInfo"
-                            class="proxy-meta text-xs text-muted block"
-                            ><span x-text="proxy.serverInfo"></span>
-                            <span x-show="proxy.proxyPort" class="local-proxy-port">
-                              · local :<span x-text="proxy.proxyPort"></span></span
-                            ></span
-                          >
-                        </div>
-                        <div
-                          class="flex flex-col items-center gap-1 flex-shrink-0"
+                      <div class="proxy-card-row px-3 py-2.5">
+                        <button
+                          type="button"
+                          @click="toggleGroup(row.key)"
+                          class="group-summary-button flex-1"
+                          :aria-expanded="isGroupExpanded(row.key)"
                         >
+                          <div class="relative flex-shrink-0">
+                            <div
+                              class="w-2 h-2 rounded-full"
+                              :class="groupStatusClass(row)"
+                            ></div>
+                          </div>
+                          <div class="group-summary-text">
+                            <span
+                              class="proxy-name text-sm text-primary block"
+                              x-text="displayName(row.name)"
+                            ></span>
+                            <span class="proxy-meta text-xs text-muted block">
+                              <span x-text="row.children.length"></span>
+                              configs ·
+                              <span x-text="row.online"></span>
+                              online ·
+                              <span x-text="row.offline"></span>
+                              offline
+                            </span>
+                          </div>
+                          <svg
+                            class="group-chevron w-3.5 h-3.5 text-muted flex-shrink-0"
+                            :class="isGroupExpanded(row.key) && 'expanded'"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              stroke-width="2"
+                              d="M9 5l7 7-7 7"
+                            />
+                          </svg>
+                        </button>
+
+                        <div class="flex flex-col items-center gap-1 flex-shrink-0">
                           <span
                             class="text-xs tabular-nums"
-                            :class="latencyClass(proxy)"
-                            x-text="proxy.latency"
+                            :class="latencyClass(row)"
+                            x-text="row.latency"
                           ></span>
                           <div class="flex items-center gap-0.5">
                             <template x-for="i in 5" :key="i">
                               <div
                                 class="latency-segment"
-                                :class="segmentClass(proxy.latencyMs, i)"
+                                :class="segmentClass(row.latencyMs, i)"
                               ></div>
                             </template>
                           </div>
                         </div>
+
+                        <div class="proxy-actions{{ if not .IsPublic }} proxy-actions-private{{ end }}">
+                          <button
+                            type="button"
+                            x-show="row.children.some(p => p.details)"
+                            @click.stop.prevent="openGroupDetails(row)"
+                            class="p-1.5 rounded text-muted btn-icon transition-all"
+                            title="Show config details"
+                          >
+                            <svg
+                              class="w-3.5 h-3.5"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                d="M13 16h-1v-4h-1m1-4h.01M12 3a9 9 0 110 18 9 9 0 010-18z"
+                              />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+
+                  <template x-if="row.type === 'proxy'">
+                    <div
+                      class="proxy-card group card rounded-lg px-3 py-2.5 flex items-center gap-3 transition-all duration-150"
+                      :class="initialLoad && 'animate'"
+                    >
+                      <div class="relative flex-shrink-0">
+                        <div
+                          class="w-2 h-2 rounded-full"
+                          :class="row.proxy.status ? 'status-online pulse' : 'status-offline'"
+                        ></div>
+                      </div>
+
+                      <div class="flex-1 min-w-0">
+                        {{ if .IsPublic }}
+                        <span
+                          class="proxy-name text-sm text-primary block"
+                          x-text="displayName(row.proxy.name)"
+                        ></span>
+                        {{ else }}
+                        <a
+                          :href="row.proxy.url"
+                          target="_blank"
+                          class="proxy-name text-sm text-primary link-hover block transition-colors"
+                          x-text="displayName(row.proxy.name)"
+                        ></a>
+                        {{ end }}
+                        <span
+                          x-show="row.proxy.serverInfo"
+                          class="proxy-meta text-xs text-muted block"
+                          x-text="row.proxy.serverInfo"
+                        ></span>
+                      </div>
+
+                      <div class="flex flex-col items-center gap-1 flex-shrink-0">
+                        <span
+                          class="text-xs tabular-nums"
+                          :class="latencyClass(row.proxy)"
+                          x-text="row.proxy.latency"
+                        ></span>
+                        <div class="flex items-center gap-0.5">
+                          <template x-for="i in 5" :key="i">
+                            <div
+                              class="latency-segment"
+                              :class="segmentClass(row.proxy.latencyMs, i)"
+                            ></div>
+                          </template>
+                        </div>
+                      </div>
+
+                      <div class="proxy-actions{{ if not .IsPublic }} proxy-actions-private{{ end }}">
+                        <button
+                          type="button"
+                          x-show="row.proxy.details"
+                          @click.stop.prevent="openDetails(row.proxy)"
+                          class="p-1.5 rounded text-muted btn-icon transition-all"
+                          title="Show config details"
+                        >
+                          <svg
+                            class="w-3.5 h-3.5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              stroke-width="2"
+                              d="M13 16h-1v-4h-1m1-4h.01M12 3a9 9 0 110 18 9 9 0 010-18z"
+                            />
+                          </svg>
+                        </button>
+
+                        {{ if not .IsPublic }}
+                        <button
+                          type="button"
+                          @click.stop.prevent="copyUrl(row.proxy)"
+                          class="hidden sm:block p-1.5 rounded text-muted btn-icon transition-all"
+                          title="Copy URL"
+                        >
+                          <svg
+                            class="w-3.5 h-3.5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              stroke-width="2"
+                              d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                            />
+                          </svg>
+                        </button>
+                        {{ end }}
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </template>
+            </div>
+
+            <template
+              x-for="row in gridRow.items.filter(item => item.type === 'group')"
+              :key="'expanded:' + row.key"
+            >
+              <div
+                class="group-panel card rounded-lg"
+                :class="isGroupExpanded(row.key) && 'expanded'"
+                :aria-hidden="!isGroupExpanded(row.key)"
+                :inert="!isGroupExpanded(row.key)"
+                role="region"
+                :aria-label="'Expanded proxies for ' + displayName(row.name)"
+              >
+                <div class="group-panel-scroll">
+                  <template
+                    x-for="proxy in row.children"
+                    :key="proxy.stableId"
+                  >
+                    <div
+                      class="proxy-child-row px-3 py-2 flex items-center gap-3"
+                    >
+                      <div class="relative proxy-child-status">
+                        <div
+                          class="w-2 h-2 rounded-full"
+                          :class="proxy.status ? 'status-online pulse' : 'status-offline'"
+                        ></div>
+                      </div>
+                      <div class="flex-1 min-w-0">
+                        {{ if .IsPublic }}
+                        <span
+                          class="proxy-name text-sm text-primary block"
+                          x-text="childDisplayName(proxy)"
+                        ></span>
+                        {{ else }}
+                        <a
+                          :href="proxy.url"
+                          target="_blank"
+                          class="proxy-name text-sm text-primary link-hover block transition-colors"
+                          x-text="childDisplayName(proxy)"
+                        ></a>
+                        {{ end }}
+                        <span
+                          x-show="proxy.serverInfo"
+                          class="proxy-meta text-xs text-muted block"
+                          x-text="proxy.serverInfo"
+                        ></span>
+                      </div>
+                      <div
+                        class="flex flex-col items-center gap-1 flex-shrink-0"
+                      >
+                        <span
+                          class="text-xs tabular-nums"
+                          :class="latencyClass(proxy)"
+                          x-text="proxy.latency"
+                        ></span>
+                        <div class="flex items-center gap-0.5">
+                          <template x-for="i in 5" :key="i">
+                            <div
+                              class="latency-segment"
+                              :class="segmentClass(proxy.latencyMs, i)"
+                            ></div>
+                          </template>
+                        </div>
+                      </div>
+                      <div class="proxy-actions{{ if not .IsPublic }} proxy-actions-private{{ end }}">
                         <button
                           type="button"
                           x-show="proxy.details"
@@ -1276,108 +1433,9 @@
                         </button>
                         {{ end }}
                       </div>
-                    </template>
-                  </div>
+                    </div>
+                  </template>
                 </div>
-              </div>
-            </template>
-
-            <template x-if="row.type === 'proxy'">
-              <div
-                class="proxy-card group card rounded-lg px-3 py-2.5 flex items-center gap-3 transition-all duration-150"
-                :class="initialLoad && 'animate'"
-              >
-                <div class="relative flex-shrink-0">
-                  <div
-                    class="w-2 h-2 rounded-full"
-                    :class="row.proxy.status ? 'status-online pulse' : 'status-offline'"
-                  ></div>
-                </div>
-
-                <div class="flex-1 min-w-0">
-                  {{ if .IsPublic }}
-                  <span
-                    class="proxy-name text-sm text-primary block"
-                    x-text="displayName(row.proxy.name)"
-                  ></span>
-                  {{ else }}
-                  <a
-                    :href="row.proxy.url"
-                    target="_blank"
-                    class="proxy-name text-sm text-primary link-hover block transition-colors"
-                    x-text="displayName(row.proxy.name)"
-                  ></a>
-                  {{ end }}
-                  <span
-                    x-show="row.proxy.serverInfo"
-                    class="proxy-meta text-xs text-muted block"
-                    ><span x-text="row.proxy.serverInfo"></span>
-                    <span x-show="row.proxy.proxyPort" class="local-proxy-port">
-                      · local :<span x-text="row.proxy.proxyPort"></span></span
-                    ></span
-                  >
-                </div>
-
-                <div class="flex flex-col items-center gap-1 flex-shrink-0">
-                  <span
-                    class="text-xs tabular-nums"
-                    :class="latencyClass(row.proxy)"
-                    x-text="row.proxy.latency"
-                  ></span>
-                  <div class="flex items-center gap-0.5">
-                    <template x-for="i in 5" :key="i">
-                      <div
-                        class="latency-segment"
-                        :class="segmentClass(row.proxy.latencyMs, i)"
-                      ></div>
-                    </template>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  x-show="row.proxy.details"
-                  @click.stop.prevent="openDetails(row.proxy)"
-                  class="p-1.5 rounded text-muted btn-icon transition-all"
-                  title="Show config details"
-                >
-                  <svg
-                    class="w-3.5 h-3.5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M13 16h-1v-4h-1m1-4h.01M12 3a9 9 0 110 18 9 9 0 010-18z"
-                    />
-                  </svg>
-                </button>
-
-                {{ if not .IsPublic }}
-                <button
-                  type="button"
-                  @click.stop.prevent="copyUrl(row.proxy)"
-                  class="hidden sm:block p-1.5 rounded text-muted btn-icon transition-all"
-                  title="Copy URL"
-                >
-                  <svg
-                    class="w-3.5 h-3.5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                    />
-                  </svg>
-                </button>
-                {{ end }}
               </div>
             </template>
           </div>
@@ -1673,6 +1731,7 @@
           detailsOpen: false,
           selectedProxy: null,
           selectedGroup: null,
+          gridColumnCount: 1,
 
           // URL-controlled visibility
           showHeader: !getUrlParam('hideHeader'),
@@ -1783,6 +1842,20 @@
             return this.sortRows(rows);
           },
 
+          get displayGridRows() {
+            const chunks = [];
+            const rows = this.displayRows;
+            const columns = Math.max(1, this.gridColumnCount || 1);
+            for (let i = 0; i < rows.length; i += columns) {
+              const items = rows.slice(i, i + columns);
+              chunks.push({
+                key: 'grid-row:' + items.map(row => row.key).join('|'),
+                items
+              });
+            }
+            return chunks;
+          },
+
           get detailsTitle() {
             if (this.selectedProxy) return this.displayName(this.selectedProxy.name);
             if (this.selectedGroup) return this.displayName(this.selectedGroup.name);
@@ -1834,6 +1907,8 @@
 
           init() {
             const params = new URLSearchParams(window.location.search);
+            this.updateGridColumnCount();
+            window.addEventListener('resize', () => this.updateGridColumnCount());
 
             // Check for badge mode
             const stableId = params.get('stableId');
@@ -1921,6 +1996,11 @@
 
           setFilter(f) { this.filter = f; localStorage.setItem('filter', f); },
           saveSort() { localStorage.setItem('sort', this.sort); },
+
+          updateGridColumnCount() {
+            const width = window.innerWidth;
+            this.gridColumnCount = width >= 1280 ? 3 : width >= 768 ? 2 : 1;
+          },
 
           sortProxyList(list) {
             return [...list].sort((a, b) => this.compareItems(a, b));
