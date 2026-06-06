@@ -153,6 +153,12 @@ func TestParseJSONConfigsKeepsKcpSettings(t *testing.T) {
 	if !strings.Contains(configs[0].RawKcpSettings, `"seed":"frdm-seed"`) {
 		t.Fatalf("RawKcpSettings = %s, want seed", configs[0].RawKcpSettings)
 	}
+	if configs[0].RawFinalMask == "" {
+		t.Fatal("RawFinalMask is empty")
+	}
+	if !strings.Contains(configs[0].RawFinalMask, `"mkcp-aes128gcm"`) {
+		t.Fatalf("RawFinalMask = %s, want mkcp-aes128gcm", configs[0].RawFinalMask)
+	}
 }
 
 func TestParseShareLinkViaLibXray(t *testing.T) {
@@ -264,6 +270,12 @@ func testVLESSKcpOutbound(server string) string {
 				"header":{"type":"dtls"},
 				"mtu":1350,
 				"tti":20
+			},
+			"finalmask":{
+				"udp":[
+					{"type":"xdns","settings":{"domain":"t.example.com"}},
+					{"type":"mkcp-aes128gcm","settings":{"password":"secret"}}
+				]
 			}
 		}
 	}`, server, server)

@@ -262,6 +262,12 @@ func (g *ConfigGenerator) generateStreamSettings(proxy *models.ProxyConfig) map[
 				ss["kcpSettings"] = rawSettings
 			}
 		}
+		if proxy.RawFinalMask != "" {
+			var rawFinalMask map[string]interface{}
+			if err := json.Unmarshal([]byte(proxy.RawFinalMask), &rawFinalMask); err == nil {
+				ss["finalmask"] = rawFinalMask
+			}
+		}
 
 	case "grpc":
 		ss["grpcSettings"] = map[string]interface{}{

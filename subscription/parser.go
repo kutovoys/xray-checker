@@ -64,6 +64,7 @@ type libXrayStreamSettings struct {
 	RealitySettings     *libXrayRealitySettings     `json:"realitySettings"`
 	RawSettings         *libXrayRawSettings         `json:"rawSettings"`
 	KcpSettings         json.RawMessage             `json:"kcpSettings"`
+	FinalMask           json.RawMessage             `json:"finalmask"`
 	WsSettings          *libXrayWsSettings          `json:"wsSettings"`
 	GrpcSettings        *libXrayGrpcSettings        `json:"grpcSettings"`
 	HttpSettings        *libXrayHttpSettings        `json:"httpSettings"`
@@ -824,6 +825,9 @@ func (p *Parser) convertOutbound(raw json.RawMessage, index int, originalData ma
 
 		if ss.Network == "kcp" && len(ss.KcpSettings) > 0 {
 			pc.RawKcpSettings = string(ss.KcpSettings)
+		}
+		if ss.Network == "kcp" && len(ss.FinalMask) > 0 {
+			pc.RawFinalMask = string(ss.FinalMask)
 		}
 
 		if ss.WsSettings != nil {

@@ -66,19 +66,22 @@ func TestShouldShowServerDetailsRequiresTrustedAuthInPublicMode(t *testing.T) {
 
 func TestToProxyDetailsIncludesSanitizedGeneratedConfig(t *testing.T) {
 	uuid := "12345678-1234-1234-1234-123456789abc"
+	finalMaskPassword := "final-mask-secret"
 	proxy := &models.ProxyConfig{
 		Index:       2,
 		Name:        "test-proxy",
 		Protocol:    "vless",
 		Server:      "example.com",
 		Port:        443,
-		Type:        "tcp",
-		Security:    "reality",
+		Type:        "kcp",
+		Security:    "none",
 		UUID:        uuid,
 		SNI:         "example.com",
 		Fingerprint: "chrome",
 		PublicKey:   "public-key",
 		ShortID:     "short-id",
+		RawFinalMask: `{"udp":[{"type":"mkcp-aes128gcm","settings":{"password":"` +
+			finalMaskPassword + `"}}]}`,
 	}
 
 	details := toProxyDetails(proxy, 10000)
@@ -99,7 +102,13 @@ func TestToProxyDetailsIncludesSanitizedGeneratedConfig(t *testing.T) {
 	if strings.Contains(text, uuid) {
 		t.Fatal("generated config should not expose full UUID")
 	}
+	if strings.Contains(text, finalMaskPassword) {
+		t.Fatal("generated config should not expose full finalmask password")
+	}
 	if !strings.Contains(text, "1234...9abc") {
 		t.Fatalf("generated config should contain masked UUID, got %s", text)
+	}
+	if !strings.Contains(text, "fina...cret") {
+		t.Fatalf("generated config should contain masked finalmask password, got %s", text)
 	}
 }
