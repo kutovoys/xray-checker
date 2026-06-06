@@ -116,6 +116,22 @@ func TestParseSingleConfigFileJSONArrayKeepsStartIndex(t *testing.T) {
 	}
 }
 
+func TestParseJSONConfigsKeepsPortOne(t *testing.T) {
+	data := fmt.Sprintf(`[{"remarks":"Port One","outbounds":[%s]}]`, testVLESSOutboundWithPort("port-one.example.com", 1))
+
+	configs, err := NewParser().parseJSONConfigs([]byte(data))
+	if err != nil {
+		t.Fatalf("parseJSONConfigs returned error: %v", err)
+	}
+
+	if len(configs) != 1 {
+		t.Fatalf("got %d configs, want 1", len(configs))
+	}
+	if configs[0].Port != 1 {
+		t.Fatalf("port = %d, want 1", configs[0].Port)
+	}
+}
+
 func TestApplySubscriptionHeadersSupportsJSONFormatAndOverrides(t *testing.T) {
 	oldSubscription := config.CLIConfig.Subscription
 	oldVersion := config.Version
@@ -155,13 +171,17 @@ func TestApplySubscriptionHeadersSupportsJSONFormatAndOverrides(t *testing.T) {
 }
 
 func testVLESSOutbound(server string) string {
+	return testVLESSOutboundWithPort(server, 443)
+}
+
+func testVLESSOutboundWithPort(server string, port int) string {
 	return fmt.Sprintf(`{
 		"protocol":"vless",
 		"tag":"%s",
 		"settings":{
 			"vnext":[{
 				"address":"%s",
-				"port":443,
+				"port":%d,
 				"users":[{
 					"id":"00000000-0000-0000-0000-000000000000",
 					"encryption":"none"
@@ -172,5 +192,5 @@ func testVLESSOutbound(server string) string {
 			"network":"tcp",
 			"security":"none"
 		}
-	}`, server, server)
+	}`, server, server, port)
 }

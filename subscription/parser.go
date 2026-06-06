@@ -771,7 +771,7 @@ func (p *Parser) convertOutbound(raw json.RawMessage, index int, originalData ma
 		return nil, fmt.Errorf("failed to parse server/port")
 	}
 
-	if pc.Port == 0 || pc.Port == 1 {
+	if pc.Port == 0 {
 		return nil, nil
 	}
 
