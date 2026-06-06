@@ -42,6 +42,30 @@ Enables automatic updates of proxy configuration from subscription source. When 
 
 Time in seconds between subscription update checks. Only used when `SUBSCRIPTION_UPDATE` is enabled.
 
+### SUBSCRIPTION_JSON_FORMAT
+
+- CLI: `--subscription-json-format`
+- Required: No
+- Default: `false`
+
+Requests JSON subscription data from providers that support full Xray config exports. Use this when a provider exposes balancer/grouped configs only in JSON format.
+
+### SUBSCRIPTION_USER_AGENT
+
+- CLI: `--subscription-user-agent`
+- Required: No
+- Default: None
+
+Custom `User-Agent` header for subscription requests. When set, it overrides the default User-Agent selected by Xray Checker.
+
+### SUBSCRIPTION_HEADERS
+
+- CLI: `--subscription-header`
+- Required: No
+- Default: None
+
+Additional subscription request headers in `Key:Value` format. Specify the CLI flag multiple times, or provide multiple environment values according to your deployment method.
+
 ## Proxy
 
 ### PROXY_CHECK_INTERVAL
@@ -160,6 +184,14 @@ Makes the dashboard publicly accessible without authentication. When enabled, th
 :::caution[Requires Protected Metrics]
 This option requires `METRICS_PROTECTED=true`. The `/metrics` endpoint and API will still require authentication, but the main dashboard (`/`) and individual proxy status pages (`/config/{id}`) will be public.
 :::
+
+### WEB_TRUSTED_EXTERNAL_AUTH
+
+- CLI: `--web-trusted-external-auth`
+- Required: No
+- Default: `false`
+
+Allows server details to be shown in public mode when the dashboard is already protected by a trusted external authentication proxy. Keep this disabled for a directly public status page.
 
 ### WEB_CUSTOM_ASSETS_PATH
 
