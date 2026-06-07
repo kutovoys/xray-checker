@@ -16,7 +16,7 @@ func TestGenerateConfigKeepsKcpSettings(t *testing.T) {
 		Type:           "kcp",
 		UUID:           "00000000-0000-0000-0000-000000000000",
 		Encryption:     "none",
-		RawKcpSettings: `{"seed":"frdm-seed","header":{"type":"dtls"},"mtu":1350,"tti":20}`,
+		RawKcpSettings: `{"seed":"test-seed","header":{"type":"dtls"},"mtu":1350,"tti":20}`,
 		RawFinalMask:   `{"udp":[{"type":"xdns","settings":{"domain":"t.example.com"}},{"type":"mkcp-aes128gcm","settings":{"password":"secret"}}]}`,
 	}
 
@@ -54,8 +54,8 @@ func TestGenerateConfigKeepsKcpSettings(t *testing.T) {
 	if kcpSettings == nil {
 		t.Fatal("kcpSettings were not generated")
 	}
-	if kcpSettings["seed"] != "frdm-seed" {
-		t.Fatalf("seed = %v, want frdm-seed", kcpSettings["seed"])
+	if kcpSettings["seed"] != "test-seed" {
+		t.Fatalf("seed = %v, want test-seed", kcpSettings["seed"])
 	}
 	if finalMask == nil {
 		t.Fatal("finalmask was not generated")

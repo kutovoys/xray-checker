@@ -150,7 +150,7 @@ func TestParseJSONConfigsKeepsKcpSettings(t *testing.T) {
 	if configs[0].RawKcpSettings == "" {
 		t.Fatal("RawKcpSettings is empty")
 	}
-	if !strings.Contains(configs[0].RawKcpSettings, `"seed":"frdm-seed"`) {
+	if !strings.Contains(configs[0].RawKcpSettings, `"seed":"test-seed"`) {
 		t.Fatalf("RawKcpSettings = %s, want seed", configs[0].RawKcpSettings)
 	}
 	if configs[0].RawFinalMask == "" {
@@ -266,7 +266,7 @@ func testVLESSKcpOutbound(server string) string {
 			"network":"kcp",
 			"security":"none",
 			"kcpSettings":{
-				"seed":"frdm-seed",
+				"seed":"test-seed",
 				"header":{"type":"dtls"},
 				"mtu":1350,
 				"tti":20
