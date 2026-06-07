@@ -223,6 +223,48 @@ func TestApplySubscriptionHeadersSupportsJSONFormatAndOverrides(t *testing.T) {
 	}
 }
 
+func TestApplySubscriptionHeadersReusesGeneratedDeviceID(t *testing.T) {
+	oldSubscription := config.CLIConfig.Subscription
+	oldVersion := config.Version
+	subscriptionDeviceIDMu.Lock()
+	oldDeviceID := subscriptionDeviceID
+	subscriptionDeviceID = ""
+	subscriptionDeviceIDMu.Unlock()
+	defer func() {
+		config.CLIConfig.Subscription = oldSubscription
+		config.Version = oldVersion
+		subscriptionDeviceIDMu.Lock()
+		subscriptionDeviceID = oldDeviceID
+		subscriptionDeviceIDMu.Unlock()
+	}()
+
+	config.Version = "test-version"
+	config.CLIConfig.Subscription.JSONFormat = true
+	config.CLIConfig.Subscription.UserAgent = ""
+	config.CLIConfig.Subscription.Headers = nil
+
+	firstReq, err := http.NewRequest("GET", "https://example.com/sub", nil)
+	if err != nil {
+		t.Fatalf("NewRequest returned error: %v", err)
+	}
+	secondReq, err := http.NewRequest("GET", "https://example.com/sub", nil)
+	if err != nil {
+		t.Fatalf("NewRequest returned error: %v", err)
+	}
+
+	NewParser().applySubscriptionHeaders(firstReq)
+	NewParser().applySubscriptionHeaders(secondReq)
+
+	firstID := firstReq.Header.Get("X-Hwid")
+	secondID := secondReq.Header.Get("X-Hwid")
+	if firstID == "" {
+		t.Fatal("X-Hwid should be generated")
+	}
+	if firstID != secondID {
+		t.Fatalf("X-Hwid changed between requests: %q != %q", firstID, secondID)
+	}
+}
+
 func testVLESSOutbound(server string) string {
 	return testVLESSOutboundWithPort(server, 443)
 }

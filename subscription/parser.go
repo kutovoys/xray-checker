@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"xray-checker/config"
 	"xray-checker/logger"
@@ -21,6 +22,11 @@ import (
 )
 
 type Parser struct{}
+
+var (
+	subscriptionDeviceIDMu sync.Mutex
+	subscriptionDeviceID   string
+)
 
 type fetchResult struct {
 	Content []byte
@@ -1033,7 +1039,7 @@ func (p *Parser) parseSingleConfigFile(data []byte, startIndex int) ([]*models.P
 func (p *Parser) applySubscriptionHeaders(req *http.Request) {
 	if config.CLIConfig.Subscription.JSONFormat {
 		req.Header.Set("User-Agent", "Happ/1.0 (android)")
-		req.Header.Set("X-Hwid", generateDeviceID())
+		req.Header.Set("X-Hwid", getSubscriptionDeviceID())
 	} else {
 		req.Header.Set("User-Agent", "Xray-Checker")
 		req.Header.Set("X-Device-OS", "CheckerOS")
@@ -1055,6 +1061,16 @@ func (p *Parser) applySubscriptionHeaders(req *http.Request) {
 		}
 		req.Header.Set(strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]))
 	}
+}
+
+func getSubscriptionDeviceID() string {
+	subscriptionDeviceIDMu.Lock()
+	defer subscriptionDeviceIDMu.Unlock()
+
+	if subscriptionDeviceID == "" {
+		subscriptionDeviceID = generateDeviceID()
+	}
+	return subscriptionDeviceID
 }
 
 func generateDeviceID() string {
