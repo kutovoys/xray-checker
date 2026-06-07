@@ -172,13 +172,12 @@ func ConfigStatusHandler(proxyChecker *checker.ProxyChecker) http.HandlerFunc {
 }
 
 func RegisterConfigEndpoints(proxies []*models.ProxyConfig, proxyChecker *checker.ProxyChecker, startPort int) {
+	if needsStableIDs(proxies) {
+		models.AssignStableIDs(proxies)
+	}
 	endpoints := make([]EndpointInfo, 0, len(proxies))
 
 	for _, proxy := range proxies {
-		if proxy.StableID == "" {
-			proxy.StableID = proxy.GenerateStableID()
-		}
-
 		endpoint := fmt.Sprintf("./config/%s", proxy.StableID)
 
 		status, latency, _ := proxyChecker.GetProxyStatus(proxy)
@@ -203,6 +202,17 @@ func RegisterConfigEndpoints(proxies []*models.ProxyConfig, proxyChecker *checke
 	endpointsMu.Lock()
 	registeredEndpoints = endpoints
 	endpointsMu.Unlock()
+}
+
+func needsStableIDs(proxies []*models.ProxyConfig) bool {
+	seen := make(map[string]bool, len(proxies))
+	for _, proxy := range proxies {
+		if proxy == nil || proxy.StableID == "" || seen[proxy.StableID] {
+			return true
+		}
+		seen[proxy.StableID] = true
+	}
+	return false
 }
 
 func formatLatency(d time.Duration) string {

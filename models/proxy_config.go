@@ -39,6 +39,7 @@ type ProxyConfig struct {
 	Index            int
 	Settings         map[string]string
 	StableID         string
+	stableIDSuffix   int
 	RawKcpSettings   string
 	RawFinalMask     string
 	RawXhttpSettings string
@@ -86,7 +87,6 @@ func (pc *ProxyConfig) GenerateStableID() string {
 
 	idComponents = append(idComponents, pc.Server)
 	idComponents = append(idComponents, fmt.Sprintf("%d", pc.Port))
-	idComponents = append(idComponents, fmt.Sprintf("%d", pc.Index))
 
 	if pc.Name != "" {
 		idComponents = append(idComponents, pc.Name)
@@ -162,11 +162,53 @@ func (pc *ProxyConfig) GenerateStableID() string {
 		idComponents = append(idComponents, pc.RawFinalMask)
 	}
 
+	if pc.stableIDSuffix > 0 {
+		idComponents = append(idComponents, fmt.Sprintf("duplicate:%d", pc.stableIDSuffix))
+	}
+
 	idString := strings.Join(idComponents, "|")
 
 	hash := sha256.Sum256([]byte(idString))
 
 	return hex.EncodeToString(hash[:])[:16]
+}
+
+func AssignStableIDs(proxies []*ProxyConfig) {
+	baseCounts := make(map[string]int)
+	for _, proxy := range proxies {
+		if proxy == nil {
+			continue
+		}
+		proxy.stableIDSuffix = 0
+		baseCounts[proxy.GenerateStableID()]++
+	}
+
+	usedIDs := make(map[string]bool)
+	seenBaseIDs := make(map[string]int)
+	for _, proxy := range proxies {
+		if proxy == nil {
+			continue
+		}
+
+		proxy.stableIDSuffix = 0
+		baseID := proxy.GenerateStableID()
+		collisionIndex := 0
+		if baseCounts[baseID] > 1 {
+			collisionIndex = seenBaseIDs[baseID]
+			seenBaseIDs[baseID]++
+		}
+
+		for {
+			proxy.stableIDSuffix = collisionIndex
+			stableID := proxy.GenerateStableID()
+			if !usedIDs[stableID] {
+				proxy.StableID = stableID
+				usedIDs[stableID] = true
+				break
+			}
+			collisionIndex++
+		}
+	}
 }
 
 func (pc *ProxyConfig) GetTransportType() string {

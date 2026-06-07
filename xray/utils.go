@@ -7,8 +7,8 @@ import (
 func PrepareProxyConfigs(proxies []*models.ProxyConfig) {
 	for i := range proxies {
 		proxies[i].Index = i
-		proxies[i].StableID = proxies[i].GenerateStableID()
 	}
+	models.AssignStableIDs(proxies)
 }
 
 func IsConfigsEqual(old, new []*models.ProxyConfig) bool {
@@ -16,28 +16,38 @@ func IsConfigsEqual(old, new []*models.ProxyConfig) bool {
 		return false
 	}
 
-	oldMap := make(map[string]bool)
-	newMap := make(map[string]bool)
+	oldIDs := stableIDCounts(old)
+	newIDs := stableIDCounts(new)
 
-	for _, cfg := range old {
-		oldMap[cfg.GenerateStableID()] = true
-	}
-
-	for _, cfg := range new {
-		newMap[cfg.GenerateStableID()] = true
-	}
-
-	for id := range oldMap {
-		if !newMap[id] {
+	for id, oldCount := range oldIDs {
+		if newIDs[id] != oldCount {
 			return false
 		}
 	}
 
-	for id := range newMap {
-		if !oldMap[id] {
+	for id, newCount := range newIDs {
+		if oldIDs[id] != newCount {
 			return false
 		}
 	}
 
 	return true
+}
+
+func stableIDCounts(configs []*models.ProxyConfig) map[string]int {
+	clones := make([]*models.ProxyConfig, 0, len(configs))
+	for _, cfg := range configs {
+		if cfg == nil {
+			continue
+		}
+		clone := *cfg
+		clones = append(clones, &clone)
+	}
+	models.AssignStableIDs(clones)
+
+	counts := make(map[string]int, len(clones))
+	for _, cfg := range clones {
+		counts[cfg.StableID]++
+	}
+	return counts
 }

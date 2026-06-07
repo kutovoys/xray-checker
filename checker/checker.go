@@ -45,6 +45,7 @@ type proxyMetricLabels struct {
 }
 
 func NewProxyChecker(proxies []*models.ProxyConfig, startPort int, ipCheckURL string, ipCheckTimeout int, genMethodURL string, downloadURL string, downloadTimeout int, downloadMinSize int64, checkMethod string) *ProxyChecker {
+	models.AssignStableIDs(proxies)
 	return &ProxyChecker{
 		proxies:   proxies,
 		startPort: startPort,
@@ -361,6 +362,7 @@ func (pc *ProxyChecker) UpdateProxies(newProxies []*models.ProxyConfig) {
 	defer pc.mu.Unlock()
 	atomic.AddUint64(&pc.generation, 1)
 	pc.ClearMetrics()
+	models.AssignStableIDs(newProxies)
 	pc.proxies = newProxies
 }
 

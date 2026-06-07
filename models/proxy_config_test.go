@@ -54,7 +54,7 @@ func TestGenerateStableIDIncludesXHTTPShape(t *testing.T) {
 	}
 }
 
-func TestGenerateStableIDIncludesIndex(t *testing.T) {
+func TestGenerateStableIDIgnoresIndex(t *testing.T) {
 	base := ProxyConfig{
 		Protocol:  "vless",
 		Server:    "example.com",
@@ -73,7 +73,41 @@ func TestGenerateStableIDIncludesIndex(t *testing.T) {
 	second := base
 	second.Index = 2
 
+	if first.GenerateStableID() != second.GenerateStableID() {
+		t.Fatal("stable IDs must not change when only proxy indexes differ")
+	}
+}
+
+func TestAssignStableIDsDisambiguatesDuplicateIdentity(t *testing.T) {
+	base := ProxyConfig{
+		Protocol:  "vless",
+		Server:    "example.com",
+		Port:      443,
+		Name:      "Proxy Smart",
+		UUID:      "00000000-0000-0000-0000-000000000000",
+		Type:      "tcp",
+		Security:  "reality",
+		SNI:       "cover.example.com",
+		PublicKey: "public-key",
+	}
+
+	first := base
+	first.Index = 1
+	second := base
+	second.Index = 2
+
+	AssignStableIDs([]*ProxyConfig{&first})
+	singleID := first.StableID
+
+	AssignStableIDs([]*ProxyConfig{&first, &second})
+
+	if first.StableID != singleID {
+		t.Fatal("first duplicate should keep the base stable ID")
+	}
+	if first.StableID == second.StableID {
+		t.Fatal("duplicate proxy identities must receive distinct stable IDs")
+	}
 	if first.GenerateStableID() == second.GenerateStableID() {
-		t.Fatal("stable IDs must differ when proxy indexes differ")
+		t.Fatal("duplicate proxy identities should differ after collision assignment")
 	}
 }

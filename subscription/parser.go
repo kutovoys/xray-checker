@@ -264,7 +264,9 @@ func (p *Parser) parseViaLibXray(cleanedData []byte, originalData map[string]*or
 		return nil
 	}
 
-	return p.extractOutbounds(response.Data, originalData)
+	configs := p.extractOutbounds(response.Data, originalData)
+	models.AssignStableIDs(configs)
+	return configs
 }
 
 // parseLineByLine parses each config line individually, skipping broken ones.
@@ -303,8 +305,8 @@ func (p *Parser) parseLineByLine(cleanedData []byte, originalData map[string]*or
 	// Re-index configs
 	for i, cfg := range allConfigs {
 		cfg.Index = i
-		cfg.StableID = cfg.GenerateStableID()
 	}
+	models.AssignStableIDs(allConfigs)
 
 	return allConfigs
 }
@@ -403,6 +405,7 @@ func (p *Parser) parseJSONConfigs(data []byte) ([]*models.ProxyConfig, error) {
 		return nil, fmt.Errorf("no valid proxy configurations found in JSON")
 	}
 
+	models.AssignStableIDs(proxyConfigs)
 	return proxyConfigs, nil
 }
 
@@ -437,6 +440,7 @@ func (p *Parser) parseSingleJSONConfig(data []byte) ([]*models.ProxyConfig, erro
 	}
 
 	proxyConfigs, _ = appendJSONConfigGroup(nil, proxyConfigs, config.Remarks, 0)
+	models.AssignStableIDs(proxyConfigs)
 
 	return proxyConfigs, nil
 }
@@ -462,7 +466,6 @@ func appendJSONConfigGroup(dst []*models.ProxyConfig, group []*models.ProxyConfi
 
 	for _, pc := range group {
 		pc.Index = startIndex
-		pc.StableID = pc.GenerateStableID()
 		dst = append(dst, pc)
 		startIndex++
 	}
@@ -896,8 +899,6 @@ func (p *Parser) convertOutbound(raw json.RawMessage, index int, originalData ma
 		return nil, err
 	}
 
-	pc.StableID = pc.GenerateStableID()
-
 	return pc, nil
 }
 
@@ -964,7 +965,6 @@ func (p *Parser) parseFolder(folderPath string) ([]*models.ProxyConfig, error) {
 
 		for _, cfg := range configs {
 			cfg.Index = configIndex
-			cfg.StableID = cfg.GenerateStableID()
 			allConfigs = append(allConfigs, cfg)
 			configIndex++
 		}
@@ -976,6 +976,7 @@ func (p *Parser) parseFolder(folderPath string) ([]*models.ProxyConfig, error) {
 		return nil, fmt.Errorf("no valid proxy configurations found in folder")
 	}
 
+	models.AssignStableIDs(allConfigs)
 	logger.Debug("Total configs from folder: %d", len(allConfigs))
 	return allConfigs, nil
 }
@@ -990,8 +991,8 @@ func (p *Parser) parseSingleConfigFile(data []byte, startIndex int) ([]*models.P
 		}
 		for i, cfg := range configs {
 			cfg.Index = startIndex + i
-			cfg.StableID = cfg.GenerateStableID()
 		}
+		models.AssignStableIDs(configs)
 		return configs, nil
 	}
 
@@ -1021,6 +1022,7 @@ func (p *Parser) parseSingleConfigFile(data []byte, startIndex int) ([]*models.P
 		}
 
 		proxyConfigs, _ = appendJSONConfigGroup(nil, proxyConfigs, config.Remarks, startIndex)
+		models.AssignStableIDs(proxyConfigs)
 
 		return proxyConfigs, nil
 	}
