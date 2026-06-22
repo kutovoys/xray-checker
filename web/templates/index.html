@@ -912,6 +912,14 @@
               </div>
             </div>
 
+            {{ if .SpeedtestEnabled }}
+            <!-- Speedtest -->
+            <div
+              class="hidden sm:block text-xs tabular-nums text-muted flex-shrink-0"
+              x-text="proxy.speedtestTested ? ('↓' + proxy.downloadMbps + ' / ↑' + proxy.uploadMbps + ' Mbps') : '—'"
+            ></div>
+            {{ end }}
+
             {{ if not .IsPublic }}
             <!-- Copy -->
             <button
@@ -1067,7 +1075,7 @@
 
           proxies: [
             {{ range $.Endpoints }}
-            { name: "{{.Name}}", stableId: "{{.StableID}}", {{ if $.ShowServerDetails }}serverInfo: "{{.ServerInfo}}", proxyPort: {{.ProxyPort}}, {{ end }}{{ if not $.IsPublic }}url: "{{.URL}}", {{ end }}index: {{.Index}}, status: {{.Status}}, latency: "{{ formatLatency .Latency }}", latencyMs: {{ .Latency.Milliseconds }} },
+            { name: "{{.Name}}", stableId: "{{.StableID}}", {{ if $.ShowServerDetails }}serverInfo: "{{.ServerInfo}}", proxyPort: {{.ProxyPort}}, {{ end }}{{ if not $.IsPublic }}url: "{{.URL}}", {{ end }}index: {{.Index}}, status: {{.Status}}, latency: "{{ formatLatency .Latency }}", latencyMs: {{ .Latency.Milliseconds }}, downloadMbps: {{.DownloadMbps}}, uploadMbps: {{.UploadMbps}}, speedtestTested: {{.SpeedtestTested}} },
             {{ end }}
           ],
 
@@ -1237,6 +1245,9 @@
                     proxy.status = updated.online;
                     proxy.latencyMs = updated.latencyMs;
                     proxy.latency = updated.latencyMs > 0 ? updated.latencyMs + 'ms' : 'n/a';
+                    proxy.downloadMbps = updated.downloadMbps;
+                    proxy.uploadMbps = updated.uploadMbps;
+                    proxy.speedtestTested = updated.speedtestTested;
                   }
                 });
                 // Update badge proxy if in badge mode
@@ -1246,6 +1257,9 @@
                     this.badgeProxy.status = updated.online;
                     this.badgeProxy.latencyMs = updated.latencyMs;
                     this.badgeProxy.latency = updated.latencyMs > 0 ? updated.latencyMs + 'ms' : 'n/a';
+                    this.badgeProxy.downloadMbps = updated.downloadMbps;
+                    this.badgeProxy.uploadMbps = updated.uploadMbps;
+                    this.badgeProxy.speedtestTested = updated.speedtestTested;
                   }
                 }
               }

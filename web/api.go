@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -16,23 +17,29 @@ import (
 var openAPISpec []byte
 
 type ProxyInfo struct {
-	Index     int    `json:"index"`
-	StableID  string `json:"stableId"`
-	Name      string `json:"name"`
-	SubName   string `json:"subName"`
-	Server    string `json:"server"`
-	Port      int    `json:"port"`
-	Protocol  string `json:"protocol"`
-	ProxyPort int    `json:"proxyPort"`
-	Online    bool   `json:"online"`
-	LatencyMs int64  `json:"latencyMs"`
+	Index           int    `json:"index"`
+	StableID        string `json:"stableId"`
+	Name            string `json:"name"`
+	SubName         string `json:"subName"`
+	Server          string `json:"server"`
+	Port            int    `json:"port"`
+	Protocol        string `json:"protocol"`
+	ProxyPort       int    `json:"proxyPort"`
+	Online          bool   `json:"online"`
+	LatencyMs       int64  `json:"latencyMs"`
+	DownloadMbps    int    `json:"downloadMbps"`
+	UploadMbps      int    `json:"uploadMbps"`
+	SpeedtestTested bool   `json:"speedtestTested"`
 }
 
 type PublicProxyInfo struct {
-	StableID  string `json:"stableId"`
-	Name      string `json:"name"`
-	Online    bool   `json:"online"`
-	LatencyMs int64  `json:"latencyMs"`
+	StableID        string `json:"stableId"`
+	Name            string `json:"name"`
+	Online          bool   `json:"online"`
+	LatencyMs       int64  `json:"latencyMs"`
+	DownloadMbps    int    `json:"downloadMbps"`
+	UploadMbps      int    `json:"uploadMbps"`
+	SpeedtestTested bool   `json:"speedtestTested"`
 }
 
 type StatusResponse struct {
@@ -51,6 +58,8 @@ type ConfigResponse struct {
 	SubscriptionUpdateInterval int      `json:"subscriptionUpdateInterval"`
 	SimulateLatency            bool     `json:"simulateLatency"`
 	SubscriptionNames          []string `json:"subscriptionNames"`
+	SpeedtestEnabled           bool     `json:"speedtestEnabled"`
+	SpeedtestInterval          int      `json:"speedtestInterval"`
 }
 
 type SystemInfoResponse struct {
@@ -87,18 +96,21 @@ func writeError(w http.ResponseWriter, message string, code int) {
 	})
 }
 
-func toProxyInfo(proxy *models.ProxyConfig, online bool, latency time.Duration, startPort int) ProxyInfo {
+func toProxyInfo(proxy *models.ProxyConfig, online bool, latency time.Duration, startPort int, downloadBps, uploadBps float64, speedtestTested bool) ProxyInfo {
 	return ProxyInfo{
-		Index:     proxy.Index,
-		StableID:  proxy.StableID,
-		Name:      proxy.Name,
-		SubName:   proxy.SubName,
-		Server:    proxy.Server,
-		Port:      proxy.Port,
-		Protocol:  proxy.Protocol,
-		ProxyPort: startPort + proxy.Index,
-		Online:    online,
-		LatencyMs: latency.Milliseconds(),
+		Index:           proxy.Index,
+		StableID:        proxy.StableID,
+		Name:            proxy.Name,
+		SubName:         proxy.SubName,
+		Server:          proxy.Server,
+		Port:            proxy.Port,
+		Protocol:        proxy.Protocol,
+		ProxyPort:       startPort + proxy.Index,
+		Online:          online,
+		LatencyMs:       latency.Milliseconds(),
+		DownloadMbps:    int(math.Round(downloadBps / 1e6)),
+		UploadMbps:      int(math.Round(uploadBps / 1e6)),
+		SpeedtestTested: speedtestTested,
 	}
 }
 
@@ -116,11 +128,15 @@ func APIPublicProxiesHandler(proxyChecker *checker.ProxyChecker) http.HandlerFun
 
 		for _, proxy := range proxies {
 			status, latency, _ := proxyChecker.GetProxyStatus(proxy.Name)
+			downloadBps, uploadBps, tested := proxyChecker.GetProxySpeedtest(proxy.Name)
 			result = append(result, PublicProxyInfo{
-				StableID:  proxy.StableID,
-				Name:      proxy.Name,
-				Online:    status,
-				LatencyMs: latency.Milliseconds(),
+				StableID:        proxy.StableID,
+				Name:            proxy.Name,
+				Online:          status,
+				LatencyMs:       latency.Milliseconds(),
+				DownloadMbps:    int(math.Round(downloadBps / 1e6)),
+				UploadMbps:      int(math.Round(uploadBps / 1e6)),
+				SpeedtestTested: tested,
 			})
 		}
 
@@ -142,7 +158,8 @@ func APIProxiesHandler(proxyChecker *checker.ProxyChecker, startPort int) http.H
 
 		for _, proxy := range proxies {
 			status, latency, _ := proxyChecker.GetProxyStatus(proxy.Name)
-			result = append(result, toProxyInfo(proxy, status, latency, startPort))
+			downloadBps, uploadBps, tested := proxyChecker.GetProxySpeedtest(proxy.Name)
+			result = append(result, toProxyInfo(proxy, status, latency, startPort, downloadBps, uploadBps, tested))
 		}
 
 		writeJSON(w, result)
@@ -180,7 +197,8 @@ func APIProxyHandler(proxyChecker *checker.ProxyChecker, startPort int) http.Han
 		}
 
 		status, latency, _ := proxyChecker.GetProxyStatus(proxy.Name)
-		writeJSON(w, toProxyInfo(proxy, status, latency, startPort))
+		downloadBps, uploadBps, tested := proxyChecker.GetProxySpeedtest(proxy.Name)
+		writeJSON(w, toProxyInfo(proxy, status, latency, startPort, downloadBps, uploadBps, tested))
 	}
 }
 
@@ -245,6 +263,8 @@ func APIConfigHandler(proxyChecker *checker.ProxyChecker) http.HandlerFunc {
 			SubscriptionUpdateInterval: config.CLIConfig.Subscription.UpdateInterval,
 			SimulateLatency:            config.CLIConfig.Proxy.SimulateLatency,
 			SubscriptionNames:          subNames,
+			SpeedtestEnabled:           config.CLIConfig.Speedtest.Enabled,
+			SpeedtestInterval:          config.CLIConfig.Speedtest.Interval,
 		})
 	}
 }

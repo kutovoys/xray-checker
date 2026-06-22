@@ -46,6 +46,11 @@ type CLI struct {
 		LogLevel  string `name:"xray-log-level" help:"Xray log level (debug|info|warning|error|none)" default:"none" env:"XRAY_LOG_LEVEL"`
 	} `embed:"" prefix:""`
 
+	Speedtest struct {
+		Enabled  bool `name:"speedtest-enabled" help:"Enable periodic download/upload speedtest through each proxy" default:"false" env:"SPEEDTEST_ENABLED"`
+		Interval int  `name:"speedtest-interval" help:"Interval for speedtest checks in minutes" default:"240" env:"SPEEDTEST_INTERVAL"`
+	} `embed:"" prefix:""`
+
 	Metrics struct {
 		Host      string `name:"metrics-host" help:"Host to listen on" default:"0.0.0.0" env:"METRICS_HOST"`
 		Port      string `name:"metrics-port" help:"Port to listen on" default:"2112" env:"METRICS_PORT"`

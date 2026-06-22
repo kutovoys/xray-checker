@@ -23,10 +23,12 @@ type RemoteWriteConfig struct {
 }
 
 var (
-	proxyStatus     *prometheus.GaugeVec
-	proxyLatency    *prometheus.GaugeVec
-	metricsInstance string
-	hasInstance     bool
+	proxyStatus            *prometheus.GaugeVec
+	proxyLatency           *prometheus.GaugeVec
+	proxySpeedtestDownload *prometheus.GaugeVec
+	proxySpeedtestUpload   *prometheus.GaugeVec
+	metricsInstance        string
+	hasInstance            bool
 )
 
 func InitMetrics(instance string) {
@@ -53,6 +55,22 @@ func InitMetrics(instance string) {
 		},
 		labels,
 	)
+
+	proxySpeedtestDownload = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "xray_proxy_speedtest_download_bps",
+			Help: "Speedtest download speed through proxy in bits per second, 0 if not tested or failed",
+		},
+		labels,
+	)
+
+	proxySpeedtestUpload = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "xray_proxy_speedtest_upload_bps",
+			Help: "Speedtest upload speed through proxy in bits per second, 0 if not tested or failed",
+		},
+		labels,
+	)
 }
 
 func GetProxyStatusMetric() *prometheus.GaugeVec {
@@ -61,6 +79,14 @@ func GetProxyStatusMetric() *prometheus.GaugeVec {
 
 func GetProxyLatencyMetric() *prometheus.GaugeVec {
 	return proxyLatency
+}
+
+func GetProxySpeedtestDownloadMetric() *prometheus.GaugeVec {
+	return proxySpeedtestDownload
+}
+
+func GetProxySpeedtestUploadMetric() *prometheus.GaugeVec {
+	return proxySpeedtestUpload
 }
 
 func buildLabelValues(protocol, address, name, subName string) []string {
@@ -79,12 +105,28 @@ func RecordProxyLatency(protocol, address, name, subName string, value time.Dura
 	proxyLatency.WithLabelValues(buildLabelValues(protocol, address, name, subName)...).Set(float64(value.Milliseconds()))
 }
 
+func RecordProxySpeedtestDownload(protocol, address, name, subName string, bps float64) {
+	proxySpeedtestDownload.WithLabelValues(buildLabelValues(protocol, address, name, subName)...).Set(bps)
+}
+
+func RecordProxySpeedtestUpload(protocol, address, name, subName string, bps float64) {
+	proxySpeedtestUpload.WithLabelValues(buildLabelValues(protocol, address, name, subName)...).Set(bps)
+}
+
 func DeleteProxyStatus(protocol, address, name, subName string) {
 	proxyStatus.DeleteLabelValues(buildLabelValues(protocol, address, name, subName)...)
 }
 
 func DeleteProxyLatency(protocol, address, name, subName string) {
 	proxyLatency.DeleteLabelValues(buildLabelValues(protocol, address, name, subName)...)
+}
+
+func DeleteProxySpeedtestDownload(protocol, address, name, subName string) {
+	proxySpeedtestDownload.DeleteLabelValues(buildLabelValues(protocol, address, name, subName)...)
+}
+
+func DeleteProxySpeedtestUpload(protocol, address, name, subName string) {
+	proxySpeedtestUpload.DeleteLabelValues(buildLabelValues(protocol, address, name, subName)...)
 }
 
 func ParseURL(remoteWriteURL string) (*RemoteWriteConfig, error) {

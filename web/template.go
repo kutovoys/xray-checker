@@ -52,6 +52,8 @@ type PageData struct {
 	ShowServerDetails          bool
 	IsPublic                   bool
 	SubscriptionName           string
+	SpeedtestEnabled           bool
+	SpeedtestInterval          int
 }
 
 func RenderIndex(w io.Writer, data PageData) error {

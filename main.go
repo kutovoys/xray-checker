@@ -85,6 +85,8 @@ func main() {
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(metrics.GetProxyStatusMetric())
 	registry.MustRegister(metrics.GetProxyLatencyMetric())
+	registry.MustRegister(metrics.GetProxySpeedtestDownloadMetric())
+	registry.MustRegister(metrics.GetProxySpeedtestUploadMetric())
 
 	proxyChecker := checker.NewProxyChecker(
 		*proxyConfigs,
@@ -157,6 +159,15 @@ func main() {
 			}
 		})
 		updateScheduler.StartAsync()
+	}
+
+	if config.CLIConfig.Speedtest.Enabled {
+		speedtestScheduler := gocron.NewScheduler(time.UTC)
+		speedtestScheduler.Every(config.CLIConfig.Speedtest.Interval).Minutes().Do(func() {
+			logger.Info("Starting proxy speedtest iteration")
+			proxyChecker.RunSpeedtests()
+		})
+		speedtestScheduler.StartAsync()
 	}
 
 	mux, err := web.NewPrefixServeMux(config.CLIConfig.Metrics.BasePath)

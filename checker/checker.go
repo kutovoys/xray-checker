@@ -18,22 +18,23 @@ import (
 )
 
 type ProxyChecker struct {
-	proxies         []*models.ProxyConfig
-	startPort       int
-	ipCheck         string
-	currentIP       string
-	httpClient      *http.Client
-	currentMetrics  sync.Map
-	latencyMetrics  sync.Map
-	ipInitialized   bool
-	ipCheckTimeout  int
-	genMethodURL    string
-	downloadURL     string
-	downloadTimeout int
-	downloadMinSize int64
-	checkMethod     string
-	mu              sync.RWMutex
-	generation      uint64
+	proxies          []*models.ProxyConfig
+	startPort        int
+	ipCheck          string
+	currentIP        string
+	httpClient       *http.Client
+	currentMetrics   sync.Map
+	latencyMetrics   sync.Map
+	speedtestMetrics sync.Map
+	ipInitialized    bool
+	ipCheckTimeout   int
+	genMethodURL     string
+	downloadURL      string
+	downloadTimeout  int
+	downloadMinSize  int64
+	checkMethod      string
+	mu               sync.RWMutex
+	generation       uint64
 }
 
 func NewProxyChecker(proxies []*models.ProxyConfig, startPort int, ipCheckURL string, ipCheckTimeout int, genMethodURL string, downloadURL string, downloadTimeout int, downloadMinSize int64, checkMethod string) *ProxyChecker {
@@ -331,6 +332,17 @@ func (pc *ProxyChecker) ClearMetrics() {
 
 	pc.latencyMetrics.Range(func(key, _ interface{}) bool {
 		pc.latencyMetrics.Delete(key)
+		return true
+	})
+
+	pc.speedtestMetrics.Range(func(key, _ interface{}) bool {
+		metricKey := key.(string)
+		parts := strings.Split(metricKey, "|")
+		if len(parts) >= 4 {
+			metrics.DeleteProxySpeedtestDownload(parts[0], parts[1], parts[2], parts[3])
+			metrics.DeleteProxySpeedtestUpload(parts[0], parts[1], parts[2], parts[3])
+		}
+		pc.speedtestMetrics.Delete(key)
 		return true
 	})
 }

@@ -212,6 +212,18 @@ components:
           type: integer
           format: int64
           example: 150
+        downloadMbps:
+          type: integer
+          description: Last speedtest download speed in Mbps (0 if not tested)
+          example: 85
+        uploadMbps:
+          type: integer
+          description: Last speedtest upload speed in Mbps (0 if not tested)
+          example: 12
+        speedtestTested:
+          type: boolean
+          description: Whether a speedtest result is available
+          example: true
 
     ProxyInfo:
       type: object
@@ -249,6 +261,18 @@ components:
           type: integer
           format: int64
           example: 150
+        downloadMbps:
+          type: integer
+          description: Last speedtest download speed in Mbps (0 if not tested)
+          example: 85
+        uploadMbps:
+          type: integer
+          description: Last speedtest upload speed in Mbps (0 if not tested)
+          example: 12
+        speedtestTested:
+          type: boolean
+          description: Whether a speedtest result is available
+          example: true
 
     StatusResponse:
       type: object
@@ -298,6 +322,13 @@ components:
           items:
             type: string
           example: ["Premium VPN", "Basic VPN"]
+        speedtestEnabled:
+          type: boolean
+          example: false
+        speedtestInterval:
+          type: integer
+          description: Interval for speedtest checks in minutes
+          example: 240
 
     SystemInfoResponse:
       type: object
