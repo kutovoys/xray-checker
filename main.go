@@ -150,6 +150,8 @@ func main() {
 				}
 			}
 
+			xray.PrepareProxyConfigs(newConfigs)
+
 			if !xray.IsConfigsEqual(*proxyConfigs, newConfigs) {
 				if err := updateConfiguration(newConfigs, proxyConfigs, xrayRunner, proxyChecker); err != nil {
 					logger.Error("Error updating configuration: %v", err)
@@ -229,8 +231,6 @@ func updateConfiguration(newConfigs []*models.ProxyConfig, currentConfigs *[]*mo
 	xrayRunner *xray.Runner, proxyChecker *checker.ProxyChecker) error {
 
 	logger.Info("Subscription changed, updating configuration...")
-
-	xray.PrepareProxyConfigs(newConfigs)
 
 	configFile := "xray_config.json"
 	configGenerator := xray.NewConfigGenerator()

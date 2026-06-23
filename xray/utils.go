@@ -1,15 +1,29 @@
 package xray
 
 import (
+	"fmt"
 	"xray-checker/models"
 )
 
 func PrepareProxyConfigs(proxies []*models.ProxyConfig) {
 	for i := range proxies {
 		proxies[i].Index = i
+		proxies[i].StableID = proxies[i].GenerateStableID()
+	}
 
-		if proxies[i].StableID == "" {
-			proxies[i].StableID = proxies[i].GenerateStableID()
+	deduplicateStableIDs(proxies)
+}
+
+// deduplicateStableIDs guarantees unique StableIDs even when proxies share
+// identical connection parameters (e.g. the same node listed twice under
+// different remarks in a subscription), since the frontend relies on
+// StableID as a unique key.
+func deduplicateStableIDs(proxies []*models.ProxyConfig) {
+	seen := make(map[string]int, len(proxies))
+	for _, p := range proxies {
+		seen[p.StableID]++
+		if n := seen[p.StableID]; n > 1 {
+			p.StableID = fmt.Sprintf("%s-%d", p.StableID, n)
 		}
 	}
 }

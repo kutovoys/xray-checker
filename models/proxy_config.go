@@ -124,6 +124,10 @@ func (pc *ProxyConfig) GenerateStableID() string {
 		idComponents = append(idComponents, pc.ServiceName)
 	}
 
+	if pc.ShortID != "" {
+		idComponents = append(idComponents, pc.ShortID)
+	}
+
 	idString := strings.Join(idComponents, "|")
 
 	hash := sha256.Sum256([]byte(idString))
