@@ -1,0 +1,12 @@
+services:
+  xray-checker:
+    build: .
+    container_name: xray-checker
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "2112:2112"
+      # Если перед сервисом стоит nginx и доступ снаружи не нужен,
+      # замени строку выше на:
+      # - "127.0.0.1:2112:2112"

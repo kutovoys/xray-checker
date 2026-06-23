@@ -1,113 +1,122 @@
-# Xray Checker
+# Xray Checker (личный форк со Speedtest)
 
-<div align="center">
+Это форк [kutovoys/xray-checker](https://github.com/kutovoys/xray-checker) — инструмента для мониторинга доступности прокси-серверов (VLESS, VMess, Trojan, Shadowsocks) с метриками для Prometheus и веб-дашбордом.
 
-[![GitHub Release](https://img.shields.io/github/v/release/kutovoys/xray-checker?color=blue)](https://github.com/kutovoys/xray-checker/releases/latest)
-[![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/kutovoys/xray-checker/build-publish.yml)](https://github.com/kutovoys/xray-checker/actions/workflows/build-publish.yml)
-[![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/kutovoys/xray-checker/total?logo=github&color=blue)](https://github.com/kutovoys/xray-checker/releases/latest)
-[![Docker Pulls](https://img.shields.io/docker/pulls/kutovoys/xray-checker?logo=docker&label=pulls)](https://hub.docker.com/r/kutovoys/xray-checker/)
-[![GitHub License](https://img.shields.io/github/license/kutovoys/xray-checker?color=greeen)](https://github.com/kutovoys/xray-checker/blob/main/LICENSE)
-[![ru](https://img.shields.io/badge/lang-ru-blue)](https://github.com/kutovoys/xray-checker/blob/main/README_RU.md)
-[![en](https://img.shields.io/badge/lang-en-red)](https://github.com/kutovoys/xray-checker/blob/main/README.md)
+**Чем этот форк отличается от оригинала:** добавлен периодический замер скорости (download/upload) через каждый прокси, результаты видны в дашборде и в метриках. Подробности — в разделе [Speedtest](#-speedtest) ниже. Всё остальное работает так же, как в оригинале — полную документацию по фичам оригинального проекта смотри на [xray-checker.kutovoy.dev](https://xray-checker.kutovoy.dev/).
 
-</div>
-<div align="center">
+## 🚀 Быстрый старт (Docker Compose)
 
-[![Documentation](https://img.shields.io/badge/Docs-xray--checker.kutovoy.dev-blue)](https://xray-checker.kutovoy.dev/)
-[![DockerHub](https://img.shields.io/badge/DockerHub-kutovoys%2Fxray--checker-blue)](https://hub.docker.com/r/kutovoys/xray-checker/)
-[![Live Demo](https://img.shields.io/badge/Demo-live-green)](https://demo-xray-checker.kutovoy.dev/)
-[![Telegram Chat](https://img.shields.io/badge/Telegram-Chat-blue?logo=telegram&)](https://t.me/+uZCGx_FRY0tiOGIy)
-
-</div>
-
-Xray Checker is a tool for monitoring proxy server availability with support for VLESS, VMess, Trojan, and Shadowsocks protocols. It automatically tests connections through Xray Core and provides metrics for Prometheus, as well as API endpoints for integration with monitoring systems.
-
-<div align="center">
-  <img src=".github/screen/xray-checker.webp" alt="Dashboard Screenshot">
-</div>
-
-> [!TIP]
-> **Try the Live Demo:** See Xray Checker in action at [demo-xray-checker.kutovoy.dev](https://demo-xray-checker.kutovoy.dev/)
-
-## 🚀 Key Features
-
-- 🔍 Monitoring of Xray proxy servers (VLESS, VMess, Trojan, Shadowsocks)
-- 🔄 Automatic configuration updates from subscription (multiple subscriptions supported)
-- 📊 Prometheus metrics export with Pushgateway support
-- 🌐 REST API with OpenAPI/Swagger documentation
-- 🌓 Web interface with dark/light theme
-- 🎨 Full web customization (custom logo, styles, or entire template)
-- 📄 Public status page for VPN services (no authentication required)
-- 📥 Endpoints for monitoring system integration (Uptime Kuma, etc.)
-- 🔒 Basic Auth protection for metrics and web interface
-- 🐳 Docker and Docker Compose support
-- 🌍 Automatic geo files management (geoip.dat, geosite.dat)
-- 📝 Flexible configuration loading:
-  - URL subscriptions (base64, JSON)
-  - Share links (vless://, vmess://, trojan://, ss://)
-  - JSON configuration files
-  - Folders with configurations
-
-Full list of features available in the [documentation](https://xray-checker.kutovoy.dev/intro/features).
-
-## 🚀 Quick Start
-
-### Docker
+Понадобится сервер с установленным Docker и Docker Compose. Если Docker не установлен:
 
 ```bash
-docker run -d \
-  -e SUBSCRIPTION_URL=https://your-subscription-url/sub \
-  -p 2112:2112 \
-  kutovoys/xray-checker
+curl -fsSL https://get.docker.com | sh
 ```
 
-### Docker Compose
+Дальше:
 
-```yaml
-services:
-  xray-checker:
-    image: kutovoys/xray-checker
-    environment:
-      - SUBSCRIPTION_URL=https://your-subscription-url/sub
-    ports:
-      - "2112:2112"
+```bash
+# 1. Клонируем форк
+git clone -b claude/vigilant-faraday-iov93w https://github.com/PepHap/xray-checker.git
+cd xray-checker
+
+# 2. Готовим конфиг
+cp .env.example .env
+cp docker-compose.example.yml docker-compose.yml
+nano .env   # вставь свой SUBSCRIPTION_URL, при желании поменяй остальное
+
+# 3. Собираем образ и запускаем
+docker compose up -d --build
 ```
 
-Detailed installation and configuration documentation is available at [xray-checker.kutovoy.dev](https://xray-checker.kutovoy.dev/intro/quick-start)
+Дашборд откроется на `http://<ip-сервера>:2112`. Метрики Prometheus — на `http://<ip-сервера>:2112/metrics`.
 
-## 📈 Project Statistics
+> .env и docker-compose.yml в .gitignore — твои настройки и ссылка на подписку не попадут в git по ошибке.
 
-<a href="https://star-history.com/#kutovoys/xray-checker&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=kutovoys/xray-checker&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=kutovoys/xray-checker&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=kutovoys/xray-checker&type=Date" />
- </picture>
-</a>
+## ⚙️ Основные переменные окружения
 
-## 🤝 Contributing
+Полный список — в `.env.example` и в [документации оригинала](https://xray-checker.kutovoy.dev/configuration/variables). Самые важные:
 
-We welcome any contributions to Xray Checker! If you want to help:
+| Переменная | По умолчанию | Что делает |
+| --- | --- | --- |
+| `SUBSCRIPTION_URL` | — | URL подписки (или share-ссылка). Обязательная. |
+| `METRICS_PROTECTED` | `false` | Закрыть дашборд и `/metrics` Basic Auth |
+| `METRICS_USERNAME` / `METRICS_PASSWORD` | `metricsUser` / `MetricsVeryHardPassword` | Логин/пароль для Basic Auth |
+| `WEB_PUBLIC` | `false` | Публичная страница статуса без авторизации (требует `METRICS_PROTECTED=true`) |
+| `WEB_SHOW_DETAILS` | `false` | Показывать IP:порт серверов в дашборде |
+| `PROXY_CHECK_INTERVAL` | `300` | Как часто проверять прокси, сек |
+| `SPEEDTEST_ENABLED` | `false` | Включить периодический speedtest |
+| `SPEEDTEST_INTERVAL` | `240` | Интервал speedtest, мин |
 
-1. Fork the repository
-2. Create a branch for your changes
-3. Make and test your changes
-4. Create a Pull Request
+## 📶 Speedtest
 
-For more details on how to contribute, read the [contributor's guide](https://xray-checker.kutovoy.dev/contributing/development-guide).
+Фича этого форка. Раз в `SPEEDTEST_INTERVAL` минут по очереди (не параллельно, чтобы не давать ложно высокую скорость от перегрузки сети) через SOCKS5-порт каждого прокси прогоняется тест скорости. Результат виден:
 
-<p align="center">
-Thanks to the all contributors who have helped improve Xray Checker:
-</p>
-<p align="center">
-<a href="https://github.com/kutovoys/xray-checker/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=kutovoys/xray-checker" />
-</a>
-</p>
-<p align="center">
-  Made with <a rel="noopener noreferrer" target="_blank" href="https://contrib.rocks">contrib.rocks</a>
-</p>
+- в дашборде — рядом с задержкой (latency) каждого прокси;
+- в метриках — `xray_proxy_speedtest_download_bps` и `xray_proxy_speedtest_upload_bps`;
+- в REST API — поля `downloadMbps` / `uploadMbps` / `speedtestTested`.
 
-## VPN Recommendation
+Включить:
 
-For secure and reliable internet access, we recommend [BlancVPN](https://getblancvpn.com/pricing?promo=klugscl&ref=xc-readme). Use promo code `KLUGSCL` for 15% off your subscription.
+```env
+SPEEDTEST_ENABLED=true
+SPEEDTEST_INTERVAL=240
+```
+
+## 🔒 Защита дашборда
+
+Если сервер смотрит в интернет без nginx/firewall перед ним — включи `METRICS_PROTECTED=true` и задай свои `METRICS_USERNAME`/`METRICS_PASSWORD`. Без этого дашборд и метрики доступны всем, кто знает адрес.
+
+Для публичной страницы статуса (без IP/портов, без авторизации, можно делиться с пользователями VPN) — `WEB_PUBLIC=true` плюс `METRICS_PROTECTED=true` (защищает только админский `/metrics` и `/api`).
+
+## 🔁 Обновление
+
+```bash
+cd xray-checker
+git pull
+docker compose build --no-cache
+docker compose up -d --force-recreate
+```
+
+После обновления сделай в браузере жёсткий рефреш страницы (`Ctrl+Shift+R`) или открой её в режиме инкогнито — дашборд рендерится на сервере, и браузер может закэшировать старую версию.
+
+## 🌐 Доступ через свой nginx (опционально)
+
+Если уже есть nginx и хочется отдать дашборд на отдельном пути существующего домена (например, `https://example.com/xray-checker/`), а не на отдельном порту:
+
+```nginx
+location /xray-checker/ {
+    proxy_pass http://127.0.0.1:2112/xray-checker/;
+    proxy_set_header Host $host;
+}
+```
+
+И в `.env`:
+
+```env
+METRICS_BASE_PATH=/xray-checker
+METRICS_HOST=0.0.0.0
+```
+
+`METRICS_BASE_PATH` обязателен — приложение само ожидает префикс в пути и само его убирает внутри себя, поэтому в nginx путь оставляем как есть, не делаем rewrite/strip префикса.
+
+## 🛟 Типичные проблемы
+
+**`Bind for 0.0.0.0:2112 failed: port is already allocated`**
+Порт уже занят старым контейнером или другим процессом:
+```bash
+docker ps                 # найти старый контейнер
+docker stop <id> && docker rm <id>
+# либо для процесса не из Docker:
+ss -tulnp | grep 2112
+kill <pid>
+```
+
+**Дашборд открывается, метрики приходят, но в консоли браузера ошибки Alpine.js / карточки прокси не отображаются**
+Обычно — закэшированная браузером старая версия страницы. Сделай жёсткий рефреш (`Ctrl+Shift+R`) или открой в инкогнито.
+
+**После `docker compose up -d --build` код не обновился**
+Слои Docker могли закэшироваться. Пересобери без кэша: `docker compose build --no-cache && docker compose up -d --force-recreate`.
+
+## 📚 Документация оригинала
+
+Все остальные возможности (несколько подписок, кастомизация веб-интерфейса, Pushgateway, интеграция с Uptime Kuma и т.д.) описаны в документации оригинального проекта: [xray-checker.kutovoy.dev](https://xray-checker.kutovoy.dev/).
