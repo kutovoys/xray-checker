@@ -3,7 +3,7 @@ module xray-checker
 go 1.26.3
 
 require (
-	github.com/alecthomas/kong v1.15.0
+	github.com/alecthomas/kong v1.16.0
 	github.com/go-co-op/gocron v1.37.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/common v0.69.0
