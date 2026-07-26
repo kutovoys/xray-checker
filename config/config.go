@@ -48,6 +48,7 @@ type CLI struct {
 	Xray struct {
 		StartPort int    `name:"xray-start-port" help:"Start port for proxy configuration" default:"10000" env:"XRAY_START_PORT"`
 		LogLevel  string `name:"xray-log-level" help:"Xray log level (debug|info|warning|error|none)" default:"none" env:"XRAY_LOG_LEVEL"`
+		Interface string `name:"xray-interface" help:"Network interface used for Xray proxy connections (for example wwan0)" default:"" env:"XRAY_INTERFACE"`
 	} `embed:"" prefix:""`
 
 	Metrics struct {

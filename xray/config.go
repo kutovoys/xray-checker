@@ -12,10 +12,18 @@ import (
 	"github.com/xtls/xray-core/infra/conf/serial"
 )
 
-type ConfigGenerator struct{}
+type ConfigGenerator struct {
+	outboundInterface string
+}
 
-func NewConfigGenerator() *ConfigGenerator {
-	return &ConfigGenerator{}
+func NewConfigGenerator(outboundInterfaces ...string) *ConfigGenerator {
+	var outboundInterface string
+	if len(outboundInterfaces) > 0 {
+		outboundInterface = strings.TrimSpace(outboundInterfaces[0])
+	}
+	return &ConfigGenerator{
+		outboundInterface: outboundInterface,
+	}
 }
 
 func (g *ConfigGenerator) GenerateConfig(proxies []*models.ProxyConfig, startPort int, xrayLogLevel string) ([]byte, error) {
@@ -291,6 +299,11 @@ func (g *ConfigGenerator) generateProxyOutbound(proxy *models.ProxyConfig) map[s
 			"secretKey": proxy.WGPrivateKey,
 			"address":   proxy.WGAddresses,
 			"peers":     []map[string]interface{}{peer},
+			// A health checker does not need a host kernel TUN. Keeping WireGuard
+			// userspace-only avoids changing host interfaces, routes, or sysctls
+			// when xray-checker runs with CAP_NET_ADMIN (for example as root on
+			// OpenWrt).
+			"noKernelTun": true,
 		}
 		if proxy.WGMTU > 0 {
 			settings["mtu"] = proxy.WGMTU
@@ -298,8 +311,14 @@ func (g *ConfigGenerator) generateProxyOutbound(proxy *models.ProxyConfig) map[s
 		outbound["settings"] = settings
 	}
 
-	// WireGuard is its own transport and takes no streamSettings.
-	if proxy.Protocol != "wireguard" {
+	if proxy.Protocol == "wireguard" {
+		// WireGuard does not use a stream transport/security method, but Xray's
+		// WireGuard client consumes streamSettings.sockopt for the UDP socket it
+		// opens to the peer endpoint.
+		if g.outboundInterface != "" {
+			outbound["streamSettings"] = g.generateSocketSettings()
+		}
+	} else {
 		outbound["streamSettings"] = g.generateStreamSettings(proxy)
 	}
 
@@ -328,6 +347,9 @@ func (g *ConfigGenerator) generateStreamSettings(proxy *models.ProxyConfig) map[
 	ss := map[string]interface{}{
 		"network":  network,
 		"security": security,
+	}
+	if g.outboundInterface != "" {
+		ss["sockopt"] = g.generateSocketOptions()
 	}
 
 	if security == "tls" {
@@ -514,6 +536,18 @@ func (g *ConfigGenerator) generateStreamSettings(proxy *models.ProxyConfig) map[
 	}
 
 	return ss
+}
+
+func (g *ConfigGenerator) generateSocketSettings() map[string]interface{} {
+	return map[string]interface{}{
+		"sockopt": g.generateSocketOptions(),
+	}
+}
+
+func (g *ConfigGenerator) generateSocketOptions() map[string]interface{} {
+	return map[string]interface{}{
+		"interface": g.outboundInterface,
+	}
 }
 
 func (g *ConfigGenerator) generateRouting(proxies []*models.ProxyConfig) map[string]interface{} {

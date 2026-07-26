@@ -33,6 +33,9 @@ func main() {
 	if logLevel == logger.LevelNone {
 		logger.Startup("Log level: none (silent mode)")
 	}
+	if config.CLIConfig.Xray.Interface != "" {
+		logger.Info("Binding Xray proxy connections to interface %s", config.CLIConfig.Xray.Interface)
+	}
 
 	if err := web.InitAssetLoader(config.CLIConfig.Web.CustomAssetsPath); err != nil {
 		logger.Fatal("Failed to initialize custom assets: %v", err)
@@ -250,7 +253,7 @@ func updateConfiguration(newConfigs []*models.ProxyConfig, currentConfigs *[]*mo
 	xray.PrepareProxyConfigs(newConfigs)
 
 	configFile := "xray_config.json"
-	configGenerator := xray.NewConfigGenerator()
+	configGenerator := xray.NewConfigGenerator(config.CLIConfig.Xray.Interface)
 	validProxies, err := configGenerator.GenerateValidatedConfig(
 		newConfigs,
 		config.CLIConfig.Xray.StartPort,

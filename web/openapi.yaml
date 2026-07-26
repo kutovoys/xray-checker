@@ -309,6 +309,10 @@ components:
         startPort:
           type: integer
           example: 10000
+        xrayInterface:
+          type: string
+          description: Network interface used for Xray proxy connections
+          example: "wwan0"
         subscriptionUpdate:
           type: boolean
           example: true
@@ -348,4 +352,3 @@ components:
         ip:
           type: string
           example: "203.0.113.1"
-

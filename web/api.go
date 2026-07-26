@@ -54,6 +54,7 @@ type ConfigResponse struct {
 	CheckMethod                string   `json:"checkMethod"`
 	Timeout                    int      `json:"timeout"`
 	StartPort                  int      `json:"startPort"`
+	XrayInterface              string   `json:"xrayInterface,omitempty"`
 	SubscriptionUpdate         bool     `json:"subscriptionUpdate"`
 	SubscriptionUpdateInterval int      `json:"subscriptionUpdateInterval"`
 	SimulateLatency            bool     `json:"simulateLatency"`
@@ -111,7 +112,7 @@ func toProxyInfo(proxy *models.ProxyConfig, online bool, latency time.Duration, 
 		MetricsLabels: proxy.MetricsLabels,
 	}
 	if includeDetails {
-		outbound := xray.NewConfigGenerator().GenerateProxyOutbound(proxy)
+		outbound := xray.NewConfigGenerator(config.CLIConfig.Xray.Interface).GenerateProxyOutbound(proxy)
 		info.GeneratedConfig = sanitizeGeneratedConfig(outbound)
 	}
 	return info
@@ -339,6 +340,7 @@ func APIConfigHandler(proxyChecker *checker.ProxyChecker) http.HandlerFunc {
 			CheckMethod:                config.CLIConfig.Proxy.CheckMethod,
 			Timeout:                    config.CLIConfig.Proxy.Timeout,
 			StartPort:                  config.CLIConfig.Xray.StartPort,
+			XrayInterface:              config.CLIConfig.Xray.Interface,
 			SubscriptionUpdate:         config.CLIConfig.Subscription.Update,
 			SubscriptionUpdateInterval: config.CLIConfig.Subscription.UpdateInterval,
 			SimulateLatency:            config.CLIConfig.Proxy.SimulateLatency,

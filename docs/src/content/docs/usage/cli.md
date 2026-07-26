@@ -73,6 +73,7 @@ All proxies from all subscriptions will be combined and monitored together.
   --simulate-latency=true \
   --xray-start-port=10000 \
   --xray-log-level=none \
+  --xray-interface="" \
   --metrics-host=0.0.0.0 \
   --metrics-port=2112 \
   --metrics-protected=true \
