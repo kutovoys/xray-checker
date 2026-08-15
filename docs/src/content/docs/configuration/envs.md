@@ -87,7 +87,18 @@ Time in seconds between proxy availability checks. Each check verifies all confi
 
 Maximum number of proxies checked in parallel within one cycle. `0` (the default) keeps the original behavior — every proxy is checked at once, so a cycle takes about as long as the slowest single proxy. A positive value bounds how many checks run simultaneously, limiting peak load and open connections on large subscriptions (the fixed per-proxy local ports are unchanged — checks are just dispatched in waves).
 
-With a limit, a cycle's worst case is roughly `⌈N / concurrency⌉ × PROXY_TIMEOUT` (N = number of proxies), so keep `PROXY_CHECK_INTERVAL` at least that large. If a cycle overruns the interval it is logged as a warning and the next scheduled cycle is skipped — checks simply run less often rather than overlapping.
+With a limit, a cycle's worst case is roughly `⌈N / concurrency⌉ × (PROXY_FAILURE_THRESHOLD × timeout + (PROXY_FAILURE_THRESHOLD - 1) × 5s)` (N = number of proxies). Here, `timeout` is `PROXY_TIMEOUT` for `ip` and `status` checks, or `PROXY_DOWNLOAD_TIMEOUT` for `download`. Keep `PROXY_CHECK_INTERVAL` at least that large. If a cycle overruns the interval it is logged as a warning and the next scheduled cycle is skipped — checks simply run less often rather than overlapping.
+
+### PROXY_FAILURE_THRESHOLD
+
+- CLI: `--proxy-failure-threshold`
+- Required: No
+- Default: `1`
+
+Number of failed attempts in one check cycle required before a proxy is marked down.
+For example, set `PROXY_FAILURE_THRESHOLD=3` to retry twice after the first failed
+attempt, waiting five seconds between attempts. The default (`1`) keeps the
+original one-attempt behavior.
 
 ### PROXY_CHECK_METHOD
 
