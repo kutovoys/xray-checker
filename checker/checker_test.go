@@ -180,6 +180,57 @@ func TestGetProxyResultLastCheck(t *testing.T) {
 	}
 }
 
+func TestStatusChangeHandler(t *testing.T) {
+	p := mkProxy("1.1.1.1", "A", "ida")
+	pc := NewProxyChecker([]*models.ProxyConfig{p}, 10000, "", 5, "", "", 5, 1, "status", 0)
+
+	var batches [][]StatusChange
+	pc.SetStatusChangeHandler(func(changes []StatusChange) {
+		batches = append(batches, changes)
+	})
+
+	// A healthy first check establishes a baseline without a recovery alert.
+	pc.storeResult(p, proxyMetricKey(p), true, 100*time.Millisecond)
+	pc.storeResult(p, proxyMetricKey(p), true, 100*time.Millisecond)
+	pc.storeResult(p, proxyMetricKey(p), false, 0)
+	pc.storeResult(p, proxyMetricKey(p), false, 0)
+	pc.storeResult(p, proxyMetricKey(p), true, 100*time.Millisecond)
+	pc.flushStatusChanges()
+
+	if got, want := len(batches), 1; got != want {
+		t.Fatalf("expected %d event batch, got %d", want, got)
+	}
+	if got, want := len(batches[0]), 2; got != want {
+		t.Fatalf("expected %d status changes, got %d", want, got)
+	}
+	if batches[0][0].Online || !batches[0][1].Online {
+		t.Fatalf("expected down then restored events, got %v", batches[0])
+	}
+}
+
+func TestOnlineSocks5ProxyURLs(t *testing.T) {
+	down := mkProxy("1.1.1.1", "down", "id-down")
+	down.Index = 2
+	up := mkProxy("2.2.2.2", "up", "id-up")
+	up.Index = 7
+	pc := NewProxyChecker([]*models.ProxyConfig{down, up}, 10000, "", 5, "", "", 5, 1, "status", 0)
+
+	pc.storeResult(down, proxyMetricKey(down), false, 0)
+	pc.storeResult(up, proxyMetricKey(up), true, time.Millisecond)
+	urls := pc.OnlineSocks5ProxyURLs()
+	if got, want := len(urls), 1; got != want {
+		t.Fatalf("expected %d SOCKS5 endpoint, got %d (%v)", want, got, urls)
+	}
+	if got, want := urls[0], "socks5://127.0.0.1:10007"; got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+
+	pc.storeResult(up, proxyMetricKey(up), false, 0)
+	if got := pc.OnlineSocks5ProxyURLs(); len(got) != 0 {
+		t.Fatalf("expected no SOCKS5 endpoint while all proxies are down, got %v", got)
+	}
+}
+
 // Regression for #172: two proxies with the SAME name but different stable_id must
 // resolve to their own result by stable_id, not to the first same-named proxy's.
 func TestGetProxyResultByStableID_DuplicateNames(t *testing.T) {

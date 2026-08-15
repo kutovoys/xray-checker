@@ -3,12 +3,14 @@ package main
 import (
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 	"xray-checker/checker"
 	"xray-checker/config"
 	"xray-checker/logger"
 	"xray-checker/metrics"
 	"xray-checker/models"
+	"xray-checker/notifier"
 	"xray-checker/subscription"
 	"xray-checker/web"
 	"xray-checker/xray"
@@ -92,6 +94,12 @@ func main() {
 		config.CLIConfig.Proxy.CheckMethod,
 		config.CLIConfig.Proxy.CheckConcurrency,
 	)
+	if config.CLIConfig.Telegram.BotToken != "" {
+		proxyChecker.SetStatusChangeHandler(
+			notifier.NewTelegramNotifier(config.CLIConfig.Telegram.BotToken, config.CLIConfig.Telegram.ChatIDs, proxyChecker.OnlineSocks5ProxyURLs, len(config.CLIConfig.Subscription.URLs) > 1).NotifyStatusChanges,
+		)
+		logger.Info("Telegram notifications enabled for %d chat(s)", len(config.CLIConfig.Telegram.ChatIDs))
+	}
 
 	// The collector renders metrics from the checker's current proxy snapshot on
 	// each scrape, so custom metricsLabels (#124) can change across subscription
@@ -99,7 +107,8 @@ func main() {
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(metrics.NewCollector(config.CLIConfig.Metrics.Instance, proxyChecker))
 
-	runCheckIteration := func() {
+	var checkMu sync.Mutex
+	runCheckIterationLocked := func() {
 		logger.Info("Starting proxy check iteration")
 		start := time.Now()
 		proxyChecker.CheckAllProxies()
@@ -132,6 +141,11 @@ func main() {
 				}
 			}
 		}
+	}
+	runCheckIteration := func() {
+		checkMu.Lock()
+		defer checkMu.Unlock()
+		runCheckIterationLocked()
 	}
 
 	if config.CLIConfig.RunOnce {
@@ -171,15 +185,19 @@ func main() {
 			}
 
 			if !xray.IsConfigsEqual(*proxyConfigs, newConfigs) {
+				// Configuration replacement restarts Xray. It must not run while a
+				// scheduled check is still using its local SOCKS ports.
+				checkMu.Lock()
 				if err := updateConfiguration(newConfigs, proxyConfigs, xrayRunner, proxyChecker); err != nil {
 					logger.Error("Error updating configuration: %v", err)
 				} else {
 					// Immediately re-check the new proxy set so /metrics is repopulated
 					// right away instead of staying empty until the next scheduled check
 					// (up to PROXY_CHECK_INTERVAL), then drop series for removed proxies.
-					runCheckIteration()
+					runCheckIterationLocked()
 					proxyChecker.PruneStaleResults()
 				}
+				checkMu.Unlock()
 			} else {
 				logger.Info("Subscriptions checked, no changes")
 			}

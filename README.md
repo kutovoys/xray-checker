@@ -69,6 +69,8 @@ services:
     image: kutovoys/xray-checker
     environment:
       - SUBSCRIPTION_URL=https://your-subscription-url/sub
+      - TELEGRAM_BOT_TOKEN=123456:your-bot-token
+      - TELEGRAM_CHAT_IDS=123456789,-1001234567890_10
     ports:
       - "2112:2112"
 ```
