@@ -91,6 +91,7 @@ func main() {
 		config.CLIConfig.Proxy.DownloadMinSize,
 		config.CLIConfig.Proxy.CheckMethod,
 		config.CLIConfig.Proxy.CheckConcurrency,
+		config.CLIConfig.Proxy.FailureThreshold,
 	)
 
 	// The collector renders metrics from the checker's current proxy snapshot on

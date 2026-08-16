@@ -31,6 +31,9 @@ type ProxyChecker struct {
 	checkMethod      string
 	checkConcurrency int // max proxies checked in parallel per cycle; 0 = unlimited
 	mu               sync.RWMutex
+	failureThreshold int
+	retryDelay       time.Duration
+	checkFn          func(*http.Client) (bool, string, time.Duration, error)
 }
 
 // proxyResult is the latest check outcome for one proxy. Metrics are rendered from
@@ -43,7 +46,11 @@ type proxyResult struct {
 	lastCheck time.Time
 }
 
-func NewProxyChecker(proxies []*models.ProxyConfig, startPort int, ipCheckURL string, ipCheckTimeout int, genMethodURL string, downloadURL string, downloadTimeout int, downloadMinSize int64, checkMethod string, checkConcurrency int) *ProxyChecker {
+func NewProxyChecker(proxies []*models.ProxyConfig, startPort int, ipCheckURL string, ipCheckTimeout int, genMethodURL string, downloadURL string, downloadTimeout int, downloadMinSize int64, checkMethod string, checkConcurrency, failureThreshold int) *ProxyChecker {
+	if failureThreshold < 1 {
+		failureThreshold = 1
+	}
+
 	return &ProxyChecker{
 		proxies:   proxies,
 		startPort: startPort,
@@ -58,6 +65,8 @@ func NewProxyChecker(proxies []*models.ProxyConfig, startPort int, ipCheckURL st
 		downloadMinSize:  downloadMinSize,
 		checkMethod:      checkMethod,
 		checkConcurrency: checkConcurrency,
+		failureThreshold: failureThreshold,
+		retryDelay:       5 * time.Second,
 	}
 }
 
@@ -145,35 +154,46 @@ func (pc *ProxyChecker) checkProxyInternal(proxy *models.ProxyConfig) {
 		Timeout: time.Second * time.Duration(pc.ipCheckTimeout),
 	}
 
-	var checkSuccess bool
-	var checkErr error
-	var logMessage string
-	var latency time.Duration
+	for attempt := 1; attempt <= pc.failureThreshold; attempt++ {
+		var checkSuccess bool
+		var checkErr error
+		var logMessage string
+		var latency time.Duration
 
-	if pc.checkMethod == "ip" {
-		checkSuccess, logMessage, latency, checkErr = pc.checkByIP(client)
-	} else if pc.checkMethod == "status" {
-		checkSuccess, logMessage, latency, checkErr = pc.checkByGen(client)
-	} else if pc.checkMethod == "download" {
-		checkSuccess, logMessage, latency, checkErr = pc.checkByDownload(client)
-	} else {
-		logger.Error("Invalid check method: %s", pc.checkMethod)
-		return
-	}
+		if pc.checkFn != nil {
+			checkSuccess, logMessage, latency, checkErr = pc.checkFn(client)
+		} else {
+			switch pc.checkMethod {
+			case "ip":
+				checkSuccess, logMessage, latency, checkErr = pc.checkByIP(client)
+			case "status":
+				checkSuccess, logMessage, latency, checkErr = pc.checkByGen(client)
+			case "download":
+				checkSuccess, logMessage, latency, checkErr = pc.checkByDownload(client)
+			default:
+				logger.Error("Invalid check method: %s", pc.checkMethod)
+				return
+			}
+		}
 
-	if checkErr != nil {
-		logger.Error("%s | %v", proxy.Name, checkErr)
+		if checkErr == nil && checkSuccess {
+			logger.Result("%s | Success | %s | Latency: %s", proxy.Name, logMessage, latency)
+			storeResult(true, latency)
+			return
+		}
+
+		if attempt < pc.failureThreshold {
+			logger.Warn("%s | Check attempt %d/%d failed; retrying in 5 seconds", proxy.Name, attempt, pc.failureThreshold)
+			time.Sleep(pc.retryDelay)
+			continue
+		}
+
+		if checkErr != nil {
+			logger.Error("%s | %v", proxy.Name, checkErr)
+		} else {
+			logger.Error("%s | Failed | %s | Latency: %s", proxy.Name, logMessage, latency)
+		}
 		setFailed()
-
-		return
-	}
-
-	if !checkSuccess {
-		logger.Error("%s | Failed | %s | Latency: %s", proxy.Name, logMessage, latency)
-		setFailed()
-	} else {
-		logger.Result("%s | Success | %s | Latency: %s", proxy.Name, logMessage, latency)
-		storeResult(true, latency)
 	}
 }
 
