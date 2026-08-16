@@ -69,6 +69,11 @@ type CLI struct {
 		CustomAssetsPath    string `name:"web-custom-assets-path" help:"Path to custom assets directory (logo.svg, favicon.ico, custom.css, index.html)" default:"" env:"WEB_CUSTOM_ASSETS_PATH"`
 	} `embed:"" prefix:""`
 
+	Telegram struct {
+		BotToken string   `name:"telegram-bot-token" help:"Telegram bot token for proxy status notifications" default:"" env:"TELEGRAM_BOT_TOKEN"`
+		ChatIDs  []string `name:"telegram-chat-id" help:"Telegram chat ID(s) for proxy status notifications (repeatable; env: comma-separated)" env:"TELEGRAM_CHAT_IDS"`
+	} `embed:"" prefix:""`
+
 	Version  VersionFlag `name:"version" help:"Print version information and quit"`
 	RunOnce  bool        `name:"run-once" help:"Run one check cycle and exit" default:"false" env:"RUN_ONCE"`
 	LogLevel string      `name:"log-level" help:"Log level (debug|info|warn|error|none)" default:"info" env:"LOG_LEVEL"`
@@ -77,6 +82,12 @@ type CLI struct {
 func (c *CLI) Validate() error {
 	if c.Web.Public && !c.Metrics.Protected {
 		return fmt.Errorf("--web-public requires --metrics-protected to be enabled")
+	}
+	if c.Telegram.BotToken != "" && len(c.Telegram.ChatIDs) == 0 {
+		return fmt.Errorf("--telegram-bot-token requires at least one --telegram-chat-id")
+	}
+	if c.Telegram.BotToken == "" && len(c.Telegram.ChatIDs) > 0 {
+		return fmt.Errorf("--telegram-chat-id requires --telegram-bot-token")
 	}
 	return nil
 }

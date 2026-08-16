@@ -31,6 +31,10 @@ type ProxyChecker struct {
 	checkMethod      string
 	checkConcurrency int // max proxies checked in parallel per cycle; 0 = unlimited
 	mu               sync.RWMutex
+	statusMu         sync.Mutex
+	statuses         map[proxyMetricLabels]bool
+	statusHandler    func([]StatusChange)
+	pendingChanges   []StatusChange
 }
 
 // proxyResult is the latest check outcome for one proxy. Metrics are rendered from
@@ -41,6 +45,13 @@ type proxyResult struct {
 	status    bool
 	latency   time.Duration
 	lastCheck time.Time
+}
+
+// StatusChange describes an availability transition detected during a check
+// cycle. Handlers receive all transitions from a cycle together.
+type StatusChange struct {
+	Proxy  *models.ProxyConfig
+	Online bool
 }
 
 func NewProxyChecker(proxies []*models.ProxyConfig, startPort int, ipCheckURL string, ipCheckTimeout int, genMethodURL string, downloadURL string, downloadTimeout int, downloadMinSize int64, checkMethod string, checkConcurrency int) *ProxyChecker {
@@ -58,6 +69,7 @@ func NewProxyChecker(proxies []*models.ProxyConfig, startPort int, ipCheckURL st
 		downloadMinSize:  downloadMinSize,
 		checkMethod:      checkMethod,
 		checkConcurrency: checkConcurrency,
+		statuses:         make(map[proxyMetricLabels]bool),
 	}
 }
 
@@ -84,6 +96,7 @@ func (pc *ProxyChecker) GetCurrentIP() (string, error) {
 
 func (pc *ProxyChecker) CheckProxy(proxy *models.ProxyConfig) {
 	pc.checkProxyInternal(proxy)
+	pc.flushStatusChanges()
 }
 
 // proxyMetricLabels is the full Prometheus label set for a proxy. It doubles as the
@@ -116,16 +129,8 @@ func (pc *ProxyChecker) checkProxyInternal(proxy *models.ProxyConfig) {
 
 	metricKey := proxyMetricKey(proxy)
 
-	storeResult := func(status bool, latency time.Duration) {
-		pc.results.Store(metricKey, proxyResult{
-			status:    status,
-			latency:   latency,
-			lastCheck: time.Now(),
-		})
-	}
-
 	setFailed := func() {
-		storeResult(false, 0)
+		pc.storeResult(proxy, metricKey, false, 0)
 	}
 
 	proxyURL := fmt.Sprintf("socks5://127.0.0.1:%d", pc.startPort+proxy.Index)
@@ -173,8 +178,48 @@ func (pc *ProxyChecker) checkProxyInternal(proxy *models.ProxyConfig) {
 		setFailed()
 	} else {
 		logger.Result("%s | Success | %s | Latency: %s", proxy.Name, logMessage, latency)
-		storeResult(true, latency)
+		pc.storeResult(proxy, metricKey, true, latency)
 	}
+}
+
+// SetStatusChangeHandler sets a callback for availability changes. Events are
+// delivered after a full check cycle, so handlers can use the final state of all
+// proxies. A first successful check establishes the baseline silently; a first
+// failed check is reported, as are all later transitions.
+func (pc *ProxyChecker) SetStatusChangeHandler(handler func([]StatusChange)) {
+	pc.statusMu.Lock()
+	defer pc.statusMu.Unlock()
+	pc.statusHandler = handler
+}
+
+func (pc *ProxyChecker) storeResult(proxy *models.ProxyConfig, metricKey proxyMetricLabels, status bool, latency time.Duration) {
+	now := time.Now()
+	pc.results.Store(metricKey, proxyResult{
+		status:    status,
+		latency:   latency,
+		lastCheck: now,
+	})
+
+	pc.statusMu.Lock()
+	previous, known := pc.statuses[metricKey]
+	pc.statuses[metricKey] = status
+	if pc.statusHandler != nil && ((!known && !status) || (known && previous != status)) {
+		pc.pendingChanges = append(pc.pendingChanges, StatusChange{Proxy: proxy, Online: status})
+	}
+	pc.statusMu.Unlock()
+}
+
+func (pc *ProxyChecker) flushStatusChanges() {
+	pc.statusMu.Lock()
+	handler := pc.statusHandler
+	changes := pc.pendingChanges
+	pc.pendingChanges = nil
+	pc.statusMu.Unlock()
+
+	if handler == nil {
+		return
+	}
+	handler(changes)
 }
 
 func (pc *ProxyChecker) checkByIP(client *http.Client) (bool, string, time.Duration, error) {
@@ -327,6 +372,14 @@ func (pc *ProxyChecker) PruneStaleResults() {
 		}
 		return true
 	})
+
+	pc.statusMu.Lock()
+	for key := range pc.statuses {
+		if _, ok := currentKeys[key]; !ok {
+			delete(pc.statuses, key)
+		}
+	}
+	pc.statusMu.Unlock()
 }
 
 // MetricsSnapshot returns one ProxyMetric per current proxy that has a check
@@ -377,6 +430,28 @@ func (pc *ProxyChecker) CheckAllProxies() {
 	pc.mu.RUnlock()
 
 	runBoundedChecks(proxiesToCheck, pc.checkConcurrency, pc.checkProxyInternal)
+	pc.flushStatusChanges()
+}
+
+// OnlineSocks5ProxyURLs returns local SOCKS5 endpoints for every currently
+// healthy proxy. It returns an empty slice when every proxy is down.
+func (pc *ProxyChecker) OnlineSocks5ProxyURLs() []string {
+	pc.mu.RLock()
+	proxies := make([]*models.ProxyConfig, len(pc.proxies))
+	copy(proxies, pc.proxies)
+	pc.mu.RUnlock()
+
+	urls := make([]string, 0, len(proxies))
+	for _, proxy := range proxies {
+		if proxy.StableID == "" {
+			proxy.StableID = proxy.GenerateStableID()
+		}
+		result, found := pc.results.Load(proxyMetricKey(proxy))
+		if found && result.(proxyResult).status {
+			urls = append(urls, fmt.Sprintf("socks5://127.0.0.1:%d", pc.startPort+proxy.Index))
+		}
+	}
+	return urls
 }
 
 // runBoundedChecks runs check(p) for every proxy concurrently. concurrency == 0

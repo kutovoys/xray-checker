@@ -316,6 +316,41 @@ Prometheus Pushgateway URL for metric pushing. Format: `https://user:pass@host:p
 
 URL path for host metrics and monitoring. Format: `/vpn/metrics`. Monitoring page could be available on `http://localhost:port/metrics-base-path`
 
+## Telegram notifications
+
+When configured, Telegram receives one alert when a proxy first fails, followed by
+an alert whenever it recovers or fails again. A proxy that is healthy on its first
+check does not generate a startup notification. All changes from one check cycle
+are grouped into one report per chat. Delivery tries each currently healthy local
+SOCKS5 endpoint in turn; if every proxy is down, it falls back to a direct
+connection.
+
+The subscription name is shown in a report only when more than one subscription
+source is configured.
+
+### TELEGRAM_BOT_TOKEN
+
+- CLI: `--telegram-bot-token`
+- Required: No
+- Default: None
+
+Token for the Telegram bot that sends status-change notifications. Requires at
+least one `TELEGRAM_CHAT_IDS` value.
+
+### TELEGRAM_CHAT_IDS
+
+- CLI: `--telegram-chat-id`
+- Required: No
+- Default: None
+
+Destination chat IDs. For multiple chats, pass `--telegram-chat-id` repeatedly or
+set a comma-separated environment variable, for example:
+`TELEGRAM_CHAT_IDS=123456789,-1001234567890`.
+
+To send to a forum topic, append its `message_thread_id` with an underscore:
+`TELEGRAM_CHAT_IDS=-1001234567890_42`. Topic IDs are Telegram's thread IDs, not
+necessarily the topic's visible ordinal number.
+
 ## Other
 
 ### LOG_LEVEL
