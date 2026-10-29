@@ -9,7 +9,11 @@ import (
 
 	"xray-checker/models"
 
+	"github.com/xtls/xray-core/app/proxyman"
+	"github.com/xtls/xray-core/core"
 	"github.com/xtls/xray-core/infra/conf/serial"
+	"github.com/xtls/xray-core/transport/internet/finalmask/salamander"
+	"github.com/xtls/xray-core/transport/internet/finalmask/udphop"
 )
 
 func TestExtractFailingOutboundTag(t *testing.T) {
@@ -31,7 +35,7 @@ func TestExtractFailingOutboundTag(t *testing.T) {
 func TestGenerateValidatedConfigPrunesUnbuildable(t *testing.T) {
 	good := &models.ProxyConfig{
 		Protocol: "vless", Server: "good.example.com", Port: 443, Name: "good",
-		UUID: "00000000-0000-0000-0000-000000000000", Type: "tcp", Security: "none", Index: 0,
+		UUID: "00000000-0000-0000-0000-000000000000", Type: "tcp", Security: "tls", SNI: "good.example.com", Index: 0,
 	}
 	bad := &models.ProxyConfig{
 		Protocol: "vless", Server: "bad.example.com", Port: 443, Name: "bad",
@@ -42,6 +46,55 @@ func TestGenerateValidatedConfigPrunesUnbuildable(t *testing.T) {
 	f := filepath.Join(t.TempDir(), "cfg.json")
 	g := NewConfigGenerator()
 	survivors, err := g.GenerateValidatedConfig([]*models.ProxyConfig{good, bad}, 20000, f, "none")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(survivors) != 1 || survivors[0].Name != "good" {
+		t.Fatalf("expected only 'good' to survive, got %d proxies", len(survivors))
+	}
+	data, _ := os.ReadFile(f)
+	if err := validateConfigBuild(data); err != nil {
+		t.Fatalf("written config must be buildable, got: %v", err)
+	}
+}
+
+// xray-core (v26.9+) refuses to build VLESS (encryption "none") or Trojan without TLS
+// to a public address; such a proxy is excluded, while one on a private address stays.
+func TestGenerateValidatedConfigPrunesPlaintextToPublicAddress(t *testing.T) {
+	public := &models.ProxyConfig{
+		Protocol: "vless", Server: "public.example.com", Port: 80, Name: "public",
+		UUID: "00000000-0000-0000-0000-000000000000", Type: "ws", Security: "none", Index: 0,
+	}
+	private := &models.ProxyConfig{
+		Protocol: "vless", Server: "10.0.0.1", Port: 80, Name: "private",
+		UUID: "00000000-0000-0000-0000-000000000000", Type: "ws", Security: "none", Index: 1,
+	}
+
+	f := filepath.Join(t.TempDir(), "cfg.json")
+	survivors, err := NewConfigGenerator().GenerateValidatedConfig([]*models.ProxyConfig{public, private}, 20000, f, "none")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(survivors) != 1 || survivors[0].Name != "private" {
+		t.Fatalf("expected only 'private' to survive, got %d proxies", len(survivors))
+	}
+}
+
+// A rejected proxy whose name contains " > " (xray's error separator) must still be
+// attributed and pruned; otherwise the unbuildable config is kept and the whole
+// instance fails to start.
+func TestGenerateValidatedConfigPrunesNameWithSeparator(t *testing.T) {
+	good := &models.ProxyConfig{
+		Protocol: "vless", Server: "good.example.com", Port: 443, Name: "good",
+		UUID: "00000000-0000-0000-0000-000000000000", Type: "tcp", Security: "tls", SNI: "good.example.com", Index: 0,
+	}
+	bad := &models.ProxyConfig{
+		Protocol: "vless", Server: "relay.example.com", Port: 80, Name: "Relay > NL",
+		UUID: "00000000-0000-0000-0000-000000000000", Type: "ws", Security: "none", Index: 1,
+	}
+
+	f := filepath.Join(t.TempDir(), "cfg.json")
+	survivors, err := NewConfigGenerator().GenerateValidatedConfig([]*models.ProxyConfig{good, bad}, 20000, f, "none")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -124,26 +177,81 @@ func TestGenerateHysteriaConfigWithObfsAndPortHopping(t *testing.T) {
 		t.Errorf("finalmask must not be placed under sockopt")
 	}
 
-	// Verify port-hopping ports and salamander obfs survived into the schema.
+	// Salamander first, then port hopping as a "udphop" mask (quicParams.udpHop is
+	// silently ignored by xray-core v26.9+).
 	var fm struct {
-		QuicParams *struct {
-			UdpHop *struct {
-				Ports json.RawMessage `json:"ports"`
-			} `json:"udpHop"`
-		} `json:"quicParams"`
-		Udp []struct {
-			Type string `json:"type"`
+		QuicParams json.RawMessage `json:"quicParams"`
+		Udp        []struct {
+			Type     string `json:"type"`
+			Settings struct {
+				Mode        string `json:"mode"`
+				RemotePorts string `json:"remotePorts"`
+				Interval    int32  `json:"interval"`
+			} `json:"settings"`
 		} `json:"udp"`
 	}
 	if err := json.Unmarshal(ss["finalmask"], &fm); err != nil {
 		t.Fatalf("failed to parse finalmask: %v", err)
 	}
-	if fm.QuicParams == nil || fm.QuicParams.UdpHop == nil || len(fm.QuicParams.UdpHop.Ports) == 0 {
-		t.Errorf("expected finalmask.quicParams.udpHop.ports to be set")
+	if fm.QuicParams != nil {
+		t.Errorf("finalmask.quicParams must not be emitted, got %s", fm.QuicParams)
 	}
-	if len(fm.Udp) == 0 || fm.Udp[0].Type != "salamander" {
-		t.Errorf("expected finalmask.udp[0].type == salamander, got %+v", fm.Udp)
+	if len(fm.Udp) != 2 || fm.Udp[0].Type != "salamander" || fm.Udp[1].Type != "udphop" {
+		t.Fatalf("expected finalmask.udp == [salamander, udphop], got %+v", fm.Udp)
 	}
+	if s := fm.Udp[1].Settings; s.Mode != "intervalLocal,intervalRemote" || s.RemotePorts != "20000-50000" || s.Interval != 30 {
+		t.Errorf("udphop settings = %+v", s)
+	}
+
+	// The built core config must carry the hop mask, not just the JSON (mask settings
+	// are decoded leniently, so a wrong key would be dropped silently).
+	var masks []interface{}
+	for _, ob := range builtOutbounds(t, configBytes) {
+		sender, err := ob.SenderSettings.GetInstance()
+		if err != nil {
+			t.Fatalf("sender settings: %v", err)
+		}
+		if sc, ok := sender.(*proxyman.SenderConfig); ok && sc.StreamSettings != nil {
+			for _, m := range sc.StreamSettings.Udpmasks {
+				instance, err := m.GetInstance()
+				if err != nil {
+					t.Fatalf("udp mask %s: %v", m.Type, err)
+				}
+				masks = append(masks, instance)
+			}
+		}
+	}
+	if len(masks) != 2 {
+		t.Fatalf("built UDP masks = %d, want salamander then udphop", len(masks))
+	}
+	if _, ok := masks[0].(*salamander.Config); !ok {
+		t.Errorf("first built mask = %T, want *salamander.Config", masks[0])
+	}
+	hop, ok := masks[1].(*udphop.Config)
+	if !ok {
+		t.Fatalf("second built mask = %T, want *udphop.Config", masks[1])
+	}
+	if !hop.Local || !hop.Remote || hop.RemoteOnce || hop.IntervalMin != 30 || hop.IntervalMax != 30 {
+		t.Errorf("built udphop = local %v remote %v once %v interval %d-%d", hop.Local, hop.Remote, hop.RemoteOnce, hop.IntervalMin, hop.IntervalMax)
+	}
+	if n := len(hop.RemotePorts); n != 30001 || hop.RemotePorts[0] != 20000 || hop.RemotePorts[n-1] != 50000 {
+		t.Errorf("built udphop has %d remote ports", n)
+	}
+}
+
+// builtOutbounds builds a generated config with xray-core and returns its outbound
+// handler configs.
+func builtOutbounds(t *testing.T, configBytes []byte) []*core.OutboundHandlerConfig {
+	t.Helper()
+	xrayConfig, err := serial.DecodeJSONConfig(bytes.NewReader(configBytes))
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	built, err := xrayConfig.Build()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	return built.Outbound
 }
 
 func TestGenerateBasicHysteriaConfig(t *testing.T) {

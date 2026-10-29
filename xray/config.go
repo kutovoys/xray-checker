@@ -63,6 +63,23 @@ func extractFailingOutboundTag(errMsg string) string {
 	return strings.TrimSpace(rest)
 }
 
+// failingOutboundTag builds each outbound of a config on its own and returns the tag
+// of the first one xray-core rejects, the same one the full build fails on. Unlike
+// parsing the tag out of the error text, this also works for tags containing " > ",
+// xray's error separator.
+func failingOutboundTag(configBytes []byte) string {
+	xrayConfig, err := serial.DecodeJSONConfig(bytes.NewReader(configBytes))
+	if err != nil {
+		return ""
+	}
+	for i := range xrayConfig.OutboundConfigs {
+		if _, err := xrayConfig.OutboundConfigs[i].Build(); err != nil {
+			return xrayConfig.OutboundConfigs[i].Tag
+		}
+	}
+	return ""
+}
+
 // shortBuildReason returns the leaf segment of xray's ">"-chained error message.
 func shortBuildReason(err error) string {
 	parts := strings.Split(err.Error(), " > ")
@@ -93,7 +110,10 @@ func (g *ConfigGenerator) GenerateValidatedConfig(proxies []*models.ProxyConfig,
 			return current, nil
 		}
 
-		tag := extractFailingOutboundTag(buildErr.Error())
+		tag := failingOutboundTag(configBytes)
+		if tag == "" {
+			tag = extractFailingOutboundTag(buildErr.Error())
+		}
 		idx := -1
 		if tag != "" {
 			for i, p := range current {
@@ -402,9 +422,9 @@ func (g *ConfigGenerator) generateStreamSettings(proxy *models.ProxyConfig) map[
 		if proxy.RawKcpSettings != "" {
 			var rawSettings map[string]interface{}
 			if err := json.Unmarshal([]byte(proxy.RawKcpSettings), &rawSettings); err == nil {
-				// xray-core removed kcp "header" and "seed" (migrated to finalmask).
-				// Emitting them aborts the WHOLE config build, taking every proxy
-				// down, so drop them — the node degrades to plain mKCP instead.
+				// xray-core removed kcp "header" and "seed" (migrated to finalmask);
+				// older cores rejected them and aborted the WHOLE config build, so
+				// drop them — the node runs as plain mKCP instead.
 				delete(rawSettings, "header")
 				delete(rawSettings, "seed")
 				ss["kcpSettings"] = rawSettings
@@ -465,51 +485,47 @@ func (g *ConfigGenerator) generateStreamSettings(proxy *models.ProxyConfig) map[
 			"auth":    proxy.HysteriaAuth,
 		}
 
-		// Build FinalMask with port-hopping (udpHop) and Salamander obfuscation.
+		// Build FinalMask UDP masks for Salamander obfuscation and port hopping.
 		//
 		// Congestion/bandwidth control (brutal up/down) is intentionally NOT emitted:
 		// it is irrelevant for a connectivity check, and an out-of-range value (e.g. a
 		// bare "100" parsed as 100 bytes/s, below xray-core's 65536 minimum) would make
 		// xray-core reject the *entire* config and bring every proxy down. Only obfs and
 		// port-hopping affect whether the proxy is reachable, so only those are kept.
-		var finalMask map[string]interface{}
-
-		// Port-hopping (matches libXray output: finalmask.quicParams.udpHop.ports)
-		if proxy.HysteriaPorts != "" {
-			udpHop := map[string]interface{}{
-				"ports": proxy.HysteriaPorts,
-			}
-			if proxy.HysteriaHopInterval > 0 {
-				// xray-core's UdpHop.Interval is an Int32Range, decoded from a plain
-				// integer (or a "min-max" string) — NOT an object.
-				udpHop["interval"] = proxy.HysteriaHopInterval
-			}
-			finalMask = map[string]interface{}{
-				"quicParams": map[string]interface{}{
-					"udpHop": udpHop,
-				},
-			}
-		}
+		var udpMasks []map[string]interface{}
 
 		// Salamander obfuscation (matches libXray output: finalmask.udp[].salamander)
 		if proxy.HysteriaObfs == "salamander" && proxy.HysteriaObfsPassword != "" {
-			if finalMask == nil {
-				finalMask = map[string]interface{}{}
-			}
-			finalMask["udp"] = []map[string]interface{}{
-				{
-					"type": "salamander",
-					"settings": map[string]interface{}{
-						"password": proxy.HysteriaObfsPassword,
-					},
+			udpMasks = append(udpMasks, map[string]interface{}{
+				"type": "salamander",
+				"settings": map[string]interface{}{
+					"password": proxy.HysteriaObfsPassword,
 				},
+			})
+		}
+
+		// Port hopping. xray-core v26.9 replaced quicParams.udpHop (now silently
+		// ignored) with a "udphop" UDP mask. Masks wrap the socket in reverse order,
+		// so hopping goes last, matching libXray output.
+		if proxy.HysteriaPorts != "" {
+			udpHop := map[string]interface{}{
+				"mode":        "intervalLocal,intervalRemote",
+				"remotePorts": proxy.HysteriaPorts,
 			}
+			if proxy.HysteriaHopInterval > 0 {
+				// An Int32Range, decoded from a plain integer (or a "min-max" string).
+				udpHop["interval"] = proxy.HysteriaHopInterval
+			}
+			udpMasks = append(udpMasks, map[string]interface{}{
+				"type":     "udphop",
+				"settings": udpHop,
+			})
 		}
 
 		// xray-core reads finalmask at the streamSettings top level (json:"finalmask"),
 		// NOT under sockopt (SocketConfig has no such field, so it would be dropped).
-		if finalMask != nil {
-			ss["finalmask"] = finalMask
+		if len(udpMasks) > 0 {
+			ss["finalmask"] = map[string]interface{}{"udp": udpMasks}
 		}
 	}
 

@@ -7,7 +7,7 @@ description: Development guide
 
 1. Requirements:
 
-   - Go 1.20 or later
+   - Go 1.27.3 or later
    - Git
    - Make (optional, for using Makefile)
 

@@ -17,7 +17,8 @@ import (
 	"xray-checker/logger"
 	"xray-checker/models"
 
-	libXray "github.com/xtls/libxray"
+	"github.com/xtls/libxray/share"
+	"github.com/xtls/xray-core/common/uuid"
 )
 
 const (
@@ -39,11 +40,6 @@ type fetchResult struct {
 
 func NewParser() *Parser {
 	return &Parser{}
-}
-
-type libXrayResponse struct {
-	Success bool            `json:"success"`
-	Data    json.RawMessage `json:"data"`
 }
 
 type libXrayOutbound struct {
@@ -101,8 +97,11 @@ type libXrayTlsSettings struct {
 type libXrayRealitySettings struct {
 	ServerName  string `json:"serverName"`
 	Fingerprint string `json:"fingerprint"`
-	PublicKey   string `json:"publicKey"`
-	ShortId     string `json:"shortId"`
+	// xray-core takes the client key from "password" and treats "publicKey" as an
+	// older alias that "password" overrides; libXray emits only "password".
+	Password  string `json:"password"`
+	PublicKey string `json:"publicKey"`
+	ShortId   string `json:"shortId"`
 }
 
 type libXrayRawSettings struct {
@@ -167,15 +166,18 @@ type libXrayQuicParams struct {
 	UdpHop     *libXrayUdpHop `json:"udpHop"`
 }
 
+// libXrayUdpHop is the pre-v26.9 xray-core port hopping (finalmask.quicParams.udpHop),
+// still read so that JSON subscriptions written for older cores keep their ports.
 type libXrayUdpHop struct {
-	// libXray serializes xray-core's conf.UdpHop, whose port list key is "ports".
-	PortList json.RawMessage    `json:"ports"`
-	Interval *libXrayInt32Range `json:"interval"`
+	PortList json.RawMessage `json:"ports"`
+	Interval json.RawMessage `json:"interval"`
 }
 
-type libXrayInt32Range struct {
-	From int32 `json:"from"`
-	To   int32 `json:"to"`
+// libXrayUDPHopMask holds the settings of a finalmask.udp "udphop" mask, which
+// replaced quicParams.udpHop in xray-core v26.9.
+type libXrayUDPHopMask struct {
+	RemotePorts json.RawMessage `json:"remotePorts"`
+	Interval    json.RawMessage `json:"interval"`
 }
 
 type libXrayMask struct {
@@ -274,10 +276,13 @@ func (p *Parser) Parse(subscriptionData string) (*ParseResult, error) {
 		rawData = []byte(subscriptionData)
 	}
 
-	trimmedData := strings.TrimSpace(string(rawData))
+	// A base64-wrapped JSON body takes the same path as plain JSON: libXray keeps only
+	// flat-settings outbounds from JSON, so it is no fallback for vnext/servers configs.
+	jsonData := p.tryDecodeBase64(rawData)
+	trimmedData := strings.TrimSpace(string(jsonData))
 	if strings.HasPrefix(trimmedData, "[") {
 		logger.Debug("Detected JSON array format")
-		configs, jsonErr := p.parseJSONConfigs(rawData)
+		configs, jsonErr := p.parseJSONConfigs(jsonData)
 		if jsonErr != nil {
 			return nil, jsonErr
 		}
@@ -286,7 +291,7 @@ func (p *Parser) Parse(subscriptionData string) (*ParseResult, error) {
 
 	if strings.HasPrefix(trimmedData, "{") {
 		logger.Debug("Detected single JSON object format")
-		configs, jsonErr := p.parseSingleJSONConfig(rawData)
+		configs, jsonErr := p.parseSingleJSONConfig(jsonData)
 		if jsonErr != nil {
 			return nil, jsonErr
 		}
@@ -305,7 +310,9 @@ func (p *Parser) Parse(subscriptionData string) (*ParseResult, error) {
 	}
 
 	var proxyConfigs []*models.ProxyConfig
-	if len(strings.TrimSpace(string(remaining))) > 0 {
+	if len(strings.TrimSpace(string(remaining))) > 0 && len(shareLinkLines(remaining)) > 0 {
+		remaining = p.normalizeShareLinks(remaining)
+
 		// Try batch parsing first
 		proxyConfigs = p.parseViaLibXray(remaining, originalData)
 
@@ -319,6 +326,9 @@ func (p *Parser) Parse(subscriptionData string) (*ParseResult, error) {
 	proxyConfigs = append(proxyConfigs, directConfigs...)
 
 	if len(proxyConfigs) == 0 {
+		if hasClashProxiesKey(remaining) {
+			return nil, fmt.Errorf("clash/mihomo YAML subscriptions are not supported (libXray v26.9.9 removed its converter)")
+		}
 		return nil, fmt.Errorf("no valid proxy configurations found")
 	}
 
@@ -607,69 +617,364 @@ func parseProxyURI(line string) *models.ProxyConfig {
 	return pc
 }
 
+// normalizeShareLinks rewrites links that libXray (v26.9.30+) no longer accepts, or
+// now reads differently, so they keep working as with libXray v26.6.27: legacy
+// vmess://base64(JSON) links become VMessAEAD URIs, TLS WebSocket links without "sni"
+// keep the WebSocket Host as SNI, odd gRPC modes fall back to gun, Hysteria2 links
+// lose parameters libXray now rejects, and Trojan links without query parameters get
+// the TLS they imply.
+func (p *Parser) normalizeShareLinks(data []byte) []byte {
+	lines := strings.Split(string(data), "\n")
+	for i, line := range lines {
+		link := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(link, "vmess://"):
+			if uri, ok := p.vmessQRToURI(link); ok {
+				lines[i] = uri
+			} else {
+				lines[i] = normalizeTransportQuery(link)
+			}
+		case strings.HasPrefix(link, "vless://"):
+			lines[i] = normalizeTransportQuery(link)
+		case strings.HasPrefix(link, "trojan://"):
+			lines[i] = normalizeTransportQuery(trojanDefaultTLS(link))
+		case strings.HasPrefix(link, "hysteria2://"), strings.HasPrefix(link, "hy2://"):
+			lines[i] = normalizeHysteria2Link(link)
+		}
+	}
+	return []byte(strings.Join(lines, "\n"))
+}
+
+// vmessQRToURI converts a v2rayN-style vmess://base64(JSON) link, which libXray
+// dropped in v26.9.30, into the VMessAEAD URI form it still parses. The mapping
+// follows libXray's former QR importer, including its use of the WebSocket Host as
+// SNI when "sni" is empty. ok is false for anything that is not such a link.
+func (p *Parser) vmessQRToURI(link string) (string, bool) {
+	encoded := strings.TrimPrefix(link, "vmess://")
+	if strings.ContainsAny(encoded, "@?#") {
+		return "", false // already a VMessAEAD URI
+	}
+	decoded, err := p.decodeBase64(encoded)
+	if err != nil {
+		return "", false
+	}
+	var qr struct {
+		Ps   string      `json:"ps"`
+		Add  string      `json:"add"`
+		Port interface{} `json:"port"`
+		ID   string      `json:"id"`
+		Scy  string      `json:"scy"`
+		Net  string      `json:"net"`
+		Type string      `json:"type"`
+		Host string      `json:"host"`
+		Path string      `json:"path"`
+		TLS  string      `json:"tls"`
+		SNI  string      `json:"sni"`
+		ALPN string      `json:"alpn"`
+		FP   string      `json:"fp"`
+	}
+	if err := json.Unmarshal(decoded, &qr); err != nil {
+		return "", false
+	}
+	address := strings.Trim(strings.TrimSpace(qr.Add), "[]")
+	port := strings.TrimSpace(fmt.Sprint(qr.Port))
+	if n, err := strconv.Atoi(port); err != nil || n <= 0 || n > 65535 || address == "" || qr.ID == "" {
+		return "", false
+	}
+	id := qr.ID
+	if strings.Contains(id, "+") {
+		// libXray reads the user info with QueryUnescape, which turns "+" into a
+		// space, so pass the UUID xray-core derives from such an id instead.
+		derived, err := uuid.ParseString(id)
+		if err != nil {
+			return "", false
+		}
+		id = derived.String()
+	}
+
+	network := strings.ToLower(strings.TrimSpace(qr.Net))
+	if network == "" {
+		network = "tcp"
+	}
+	query := url.Values{}
+	query.Set("type", network)
+	if qr.Scy != "" {
+		query.Set("encryption", qr.Scy)
+	}
+	switch network {
+	case "grpc", "gun":
+		if qr.Path != "" {
+			query.Set("serviceName", qr.Path)
+		}
+		if qr.Type == "multi" {
+			query.Set("mode", "multi")
+		}
+	case "kcp", "mkcp":
+		// The QR "path" held the mKCP seed, which xray-core no longer supports.
+	default:
+		if qr.Path != "" {
+			query.Set("path", qr.Path)
+		}
+		if qr.Host != "" {
+			query.Set("host", qr.Host)
+		}
+		switch network {
+		case "tcp", "raw":
+			if qr.Type != "" && qr.Type != "none" {
+				query.Set("headerType", qr.Type)
+			}
+		case "xhttp", "splithttp":
+			if qr.Type != "" {
+				query.Set("mode", qr.Type)
+			}
+		}
+	}
+	if security := strings.ToLower(strings.TrimSpace(qr.TLS)); security != "" && security != "none" {
+		query.Set("security", security)
+		sni := qr.SNI
+		if sni == "" && (network == "ws" || network == "websocket") {
+			sni = qr.Host
+		}
+		if sni != "" {
+			query.Set("sni", sni)
+		}
+		if qr.FP != "" {
+			query.Set("fp", qr.FP)
+		}
+		if qr.ALPN != "" {
+			query.Set("alpn", qr.ALPN)
+		}
+	}
+
+	uri := url.URL{
+		Scheme:   "vmess",
+		User:     url.User(id),
+		Host:     net.JoinHostPort(address, port),
+		RawQuery: query.Encode(),
+		Fragment: qr.Ps,
+	}
+	return uri.String(), true
+}
+
+// normalizeTransportQuery keeps two transport readings of libXray v26.6.27 that
+// v26.9.30 changed: a TLS WebSocket link without "sni" uses its WebSocket Host as SNI
+// (libXray now takes the server address, which breaks nodes behind a CDN that are
+// addressed by IP), and a gRPC "mode" other than multi means gun (libXray now drops
+// the link).
+func normalizeTransportQuery(link string) string {
+	u, err := url.Parse(link)
+	if err != nil {
+		return link
+	}
+	query := u.Query()
+	changed := false
+	switch query.Get("type") {
+	case "ws", "websocket":
+		if query.Get("security") == "tls" && query.Get("sni") == "" && query.Get("host") != "" {
+			query.Set("sni", query.Get("host"))
+			changed = true
+		}
+	case "grpc", "gun":
+		if mode := query.Get("mode"); mode != "" && mode != "gun" && mode != "multi" {
+			query.Del("mode")
+			changed = true
+		}
+	}
+	if !changed {
+		return link
+	}
+	u.RawQuery = query.Encode()
+	return u.String()
+}
+
+// trojanDefaultTLS adds the TLS a trojan:// link without query parameters implies;
+// libXray applies its Trojan TLS default only to links that have some.
+func trojanDefaultTLS(link string) string {
+	base, fragment, hasFragment := strings.Cut(link, "#")
+	prefix, rawQuery, _ := strings.Cut(base, "?")
+	if strings.Trim(rawQuery, "&") != "" {
+		return link
+	}
+	base = prefix + "?security=tls"
+	if hasFragment {
+		base += "#" + fragment
+	}
+	return base
+}
+
+// normalizeHysteria2Link drops Hysteria2 link parameters that libXray v26.9.30+
+// rejects outright but that libXray v26.6.27 ignored, so these nodes stay checked as
+// before: the TLS-skip flags and pinSHA256 (the checker no longer honours them and
+// verifies TLS normally, see xray/config.go), security=none (Hysteria2 always uses
+// TLS), an obfs-password without obfs, a hop-interval without a port range, and
+// repeated keys (the first value wins, as before).
+func normalizeHysteria2Link(link string) string {
+	base, fragment, hasFragment := strings.Cut(link, "#")
+	prefix, rawQuery, hasQuery := strings.Cut(base, "?")
+	if !hasQuery {
+		return link
+	}
+	query, _ := url.ParseQuery(rawQuery)
+	ports := hysteria2AuthorityPort(prefix)
+	if query.Has("ports") {
+		ports = query.Get("ports")
+	} else if query.Has("mport") {
+		ports = query.Get("mport")
+	}
+	hopping := strings.ContainsAny(ports, ",-")
+	obfs := query.Get("obfs")
+
+	seen := make(map[string]bool)
+	var kept []string
+	for _, pair := range strings.Split(rawQuery, "&") {
+		rawKey, rawValue, _ := strings.Cut(pair, "=")
+		key, err := url.QueryUnescape(rawKey)
+		if err != nil {
+			key = rawKey
+		}
+		value, _ := url.QueryUnescape(rawValue)
+		switch {
+		case pair == "" || seen[key]:
+			continue
+		case key == "insecure" || key == "allowInsecure" || key == "pinSHA256":
+			continue
+		case key == "security" && value == "none":
+			continue
+		case key == "obfs-password" && (obfs == "" || obfs == "none"):
+			continue
+		case key == "hop-interval" && !hopping:
+			continue
+		}
+		seen[key] = true
+		kept = append(kept, pair)
+	}
+	out := prefix
+	if len(kept) > 0 {
+		out += "?" + strings.Join(kept, "&")
+	}
+	if hasFragment {
+		out += "#" + fragment
+	}
+	return out
+}
+
+// hysteria2AuthorityPort returns the port part of a Hysteria2 link's authority, which
+// may be a range or a list, or "443" when it has none.
+func hysteria2AuthorityPort(prefix string) string {
+	_, authority, _ := strings.Cut(prefix, "://")
+	authority, _, _ = strings.Cut(authority, "/")
+	if at := strings.LastIndexByte(authority, '@'); at >= 0 {
+		authority = authority[at+1:]
+	}
+	if strings.HasPrefix(authority, "[") {
+		end := strings.IndexByte(authority, ']')
+		if end < 0 || !strings.HasPrefix(authority[end+1:], ":") {
+			return "443"
+		}
+		return authority[end+2:]
+	}
+	if _, port, found := strings.Cut(authority, ":"); found {
+		return port
+	}
+	return "443"
+}
+
+// shareLinkLines returns the lines libXray treats as share links (a "scheme://"
+// prefix whose scheme has no spaces, mirroring its own line filter), leaving out the
+// port 0/1 placeholders that convertOutbound discards anyway.
+func shareLinkLines(data []byte) []string {
+	var links []string
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		scheme, _, found := strings.Cut(line, "://")
+		if !found || scheme == "" || strings.ContainsAny(scheme, " \t#\"{") {
+			continue
+		}
+		if u, err := url.Parse(line); err == nil && (u.Port() == "0" || u.Port() == "1") {
+			continue
+		}
+		links = append(links, line)
+	}
+	return links
+}
+
+// shareLinkLabel names a share link in logs without its credentials: the scheme,
+// host:port and #name only, never the user info or the query.
+func shareLinkLabel(link string) string {
+	scheme, _, found := strings.Cut(link, "://")
+	if !found {
+		return "(not a share link)"
+	}
+	u, err := url.Parse(link)
+	if err != nil || u.User == nil || u.Host == "" {
+		return scheme + "://"
+	}
+	label := scheme + "://" + u.Host
+	if u.Fragment != "" {
+		label += "#" + u.Fragment
+	}
+	return label
+}
+
+// hasClashProxiesKey reports whether data is a Clash/Mihomo YAML document (a
+// top-level "proxies:" key), which libXray stopped converting in v26.9.9.
+func hasClashProxiesKey(data []byte) bool {
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "proxies:") {
+			return true
+		}
+	}
+	return false
+}
+
 // parseViaLibXray attempts to parse all configs at once via libXray.
 // Returns parsed configs or nil if parsing fails.
 func (p *Parser) parseViaLibXray(cleanedData []byte, originalData map[string]*originalLinkData) []*models.ProxyConfig {
-	base64Data := base64.StdEncoding.EncodeToString(cleanedData)
-
-	resultBase64 := libXray.ConvertShareLinksToXrayJson(base64Data)
-
-	resultBytes, err := base64.StdEncoding.DecodeString(resultBase64)
+	data, err := share.ConvertShareLinksToXrayJson(string(cleanedData), "")
 	if err != nil {
-		logger.Debug("Failed to decode libXray response: %v", err)
+		logger.Debug("libXray batch parsing failed: %v", err)
 		return nil
 	}
 
-	var response libXrayResponse
-	if err := json.Unmarshal(resultBytes, &response); err != nil {
-		logger.Debug("Failed to parse libXray response: %v", err)
-		return nil
+	// libXray drops links it cannot convert, or whose outbound xray-core refuses to
+	// build (e.g. VLESS/Trojan without TLS to a public address), without saying which.
+	var converted struct {
+		Outbounds []json.RawMessage `json:"outbounds"`
+	}
+	if err := json.Unmarshal(data, &converted); err == nil {
+		if links := shareLinkLines(cleanedData); len(converted.Outbounds) < len(links) {
+			var skipped []string
+			for _, link := range links {
+				if _, err := share.ConvertShareLinksToXrayJson(link, ""); err != nil {
+					skipped = append(skipped, shareLinkLabel(link))
+				}
+			}
+			if n := len(skipped); n > 0 {
+				if n > 10 {
+					skipped = append(skipped[:10], fmt.Sprintf("and %d more", n-10))
+				}
+				logger.Warn("libXray skipped %d of %d share links (unsupported format, or a config xray-core refuses to build): %s", n, len(links), strings.Join(skipped, ", "))
+			}
+		}
 	}
 
-	if !response.Success {
-		logger.Debug("libXray batch parsing returned success=false")
-		return nil
-	}
-
-	return p.extractOutbounds(response.Data, originalData)
+	return p.extractOutbounds(data, originalData)
 }
 
 // parseLineByLine parses each config line individually, skipping broken ones.
 func (p *Parser) parseLineByLine(cleanedData []byte, originalData map[string]*originalLinkData) []*models.ProxyConfig {
-	lines := strings.Split(string(cleanedData), "\n")
 	var allConfigs []*models.ProxyConfig
 	skippedCount := 0
 
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-
-		lineBase64 := base64.StdEncoding.EncodeToString([]byte(line))
-		resultBase64 := libXray.ConvertShareLinksToXrayJson(lineBase64)
-
-		resultBytes, err := base64.StdEncoding.DecodeString(resultBase64)
+	for _, line := range shareLinkLines(cleanedData) {
+		data, err := share.ConvertShareLinksToXrayJson(line, "")
 		if err != nil {
-			logger.Warn("Skipping invalid config line (decode error): %.50s...", line)
+			logger.Warn("Skipping invalid config line (libXray: %v): %s", err, shareLinkLabel(line))
 			skippedCount++
 			continue
 		}
 
-		var response libXrayResponse
-		if err := json.Unmarshal(resultBytes, &response); err != nil {
-			logger.Warn("Skipping invalid config line (parse error): %.50s...", line)
-			skippedCount++
-			continue
-		}
-
-		if !response.Success {
-			logger.Warn("Skipping invalid config line (libXray error): %.50s...", line)
-			skippedCount++
-			continue
-		}
-
-		configs := p.extractOutbounds(response.Data, originalData)
+		configs := p.extractOutbounds(data, originalData)
 		allConfigs = append(allConfigs, configs...)
 	}
 
@@ -1025,7 +1330,11 @@ func (p *Parser) parseShareLink(link string) *parsedLink {
 	result.Encryption = query.Get("encryption")
 	result.Path = query.Get("path")
 	result.Host = query.Get("host")
-	result.AllowInsecure = query.Get("allowInsecure") == "1" || query.Get("allowInsecure") == "true"
+	insecure := query.Get("allowInsecure")
+	if insecure == "" {
+		insecure = query.Get("insecure")
+	}
+	result.AllowInsecure = insecure == "1" || insecure == "true"
 
 	return result
 }
@@ -1291,7 +1600,10 @@ func (p *Parser) convertOutbound(raw json.RawMessage, index int, originalData ma
 		if ss.RealitySettings != nil {
 			pc.SNI = ss.RealitySettings.ServerName
 			pc.Fingerprint = ss.RealitySettings.Fingerprint
-			pc.PublicKey = ss.RealitySettings.PublicKey
+			pc.PublicKey = ss.RealitySettings.Password
+			if pc.PublicKey == "" {
+				pc.PublicKey = ss.RealitySettings.PublicKey
+			}
 			pc.ShortID = ss.RealitySettings.ShortId
 		}
 
@@ -1371,7 +1683,7 @@ func (p *Parser) convertOutbound(raw json.RawMessage, index int, originalData ma
 			}
 		}
 
-		// Extract QuicParams and Salamander from FinalMask
+		// Extract QuicParams, Salamander and port hopping from FinalMask
 		// FinalMask can be at streamSettings level or inside sockopt
 		finalMask := ss.FinalMask
 		if finalMask == nil && ss.Sockopt != nil {
@@ -1383,28 +1695,30 @@ func (p *Parser) convertOutbound(raw json.RawMessage, index int, originalData ma
 				pc.HysteriaUp = qp.BrutalUp
 				pc.HysteriaDown = qp.BrutalDown
 				if qp.UdpHop != nil {
-					if qp.UdpHop.PortList != nil {
-						var ports string
-						if err := json.Unmarshal(qp.UdpHop.PortList, &ports); err == nil {
-							pc.HysteriaPorts = ports
-						} else {
-							logger.Debug("Failed to parse UdpHop portList as string: %v", err)
-						}
-					}
-					if qp.UdpHop.Interval != nil {
-						pc.HysteriaHopInterval = qp.UdpHop.Interval.From
-					}
+					pc.HysteriaPorts = parsePortList(qp.UdpHop.PortList)
+					pc.HysteriaHopInterval = parseInt32RangeFrom(qp.UdpHop.Interval)
 				}
 			}
-			if len(finalMask.Udp) > 0 {
-				mask := finalMask.Udp[0]
-				if mask.Type == "salamander" && mask.Settings != nil {
+			for _, mask := range finalMask.Udp {
+				if mask.Settings == nil {
+					continue
+				}
+				switch mask.Type {
+				case "salamander":
 					pc.HysteriaObfs = "salamander"
 					var sal libXraySalamander
 					if err := json.Unmarshal(*mask.Settings, &sal); err == nil {
 						pc.HysteriaObfsPassword = sal.Password
 					} else {
 						logger.Debug("Failed to parse salamander settings: %v", err)
+					}
+				case "udphop":
+					var hop libXrayUDPHopMask
+					if err := json.Unmarshal(*mask.Settings, &hop); err == nil {
+						pc.HysteriaPorts = parsePortList(hop.RemotePorts)
+						pc.HysteriaHopInterval = parseInt32RangeFrom(hop.Interval)
+					} else {
+						logger.Debug("Failed to parse udphop settings: %v", err)
 					}
 				}
 			}
@@ -1430,6 +1744,62 @@ func (p *Parser) convertOutbound(raw json.RawMessage, index int, originalData ma
 	pc.StableID = pc.GenerateStableID()
 
 	return pc, nil
+}
+
+// parsePortList returns an xray PortList ("20000-50000", "443,8443", 443, or a list
+// of those) in the string form ProxyConfig.HysteriaPorts holds.
+func parsePortList(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return strings.TrimSpace(text)
+	}
+	var port int
+	if err := json.Unmarshal(raw, &port); err == nil {
+		return strconv.Itoa(port)
+	}
+	var list []json.RawMessage
+	if err := json.Unmarshal(raw, &list); err == nil {
+		parts := make([]string, 0, len(list))
+		for _, item := range list {
+			if part := parsePortList(item); part != "" {
+				parts = append(parts, part)
+			}
+		}
+		return strings.Join(parts, ",")
+	}
+	logger.Debug("Failed to parse port list: %s", raw)
+	return ""
+}
+
+// parseInt32RangeFrom returns the lower bound of an xray Int32Range, written as a
+// number, a "from" or "from-to" string, or a {"from":..,"to":..} object.
+func parseInt32RangeFrom(raw json.RawMessage) int32 {
+	if len(raw) == 0 {
+		return 0
+	}
+	var number int32
+	if err := json.Unmarshal(raw, &number); err == nil {
+		return number
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		from, _, _ := strings.Cut(strings.TrimSpace(text), "-")
+		if value, err := strconv.ParseInt(strings.TrimSpace(from), 10, 32); err == nil {
+			return int32(value)
+		}
+		return 0
+	}
+	var object struct {
+		From int32 `json:"from"`
+	}
+	if err := json.Unmarshal(raw, &object); err == nil {
+		return object.From
+	}
+	logger.Debug("Failed to parse interval: %s", raw)
+	return 0
 }
 
 func (p *Parser) tryDecodeBase64(data []byte) []byte {

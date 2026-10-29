@@ -2,9 +2,13 @@ package subscription
 
 import (
 	"encoding/base64"
+	"fmt"
+	"strings"
 	"testing"
 
 	"xray-checker/models"
+
+	"github.com/xtls/xray-core/common/uuid"
 )
 
 func node(name, server string, port int) *models.ProxyConfig {
@@ -289,5 +293,290 @@ func TestConvertOutboundJSON_MetricsLabels(t *testing.T) {
 	pc3, _ := p.convertOutbound([]byte(`{"protocol":"trojan","tag":"p","settings":{"servers":[{"address":"2.2.2.2","port":443,"password":"pw"}]}}`), 0, nil)
 	if pc3.MetricsLabels != nil {
 		t.Errorf("expected nil MetricsLabels, got %v", pc3.MetricsLabels)
+	}
+}
+
+const testRealityKey = "zs8T79DuKjScDtY3ZCObgOWBNg5n2T9xtPFv5sGC4O0"
+
+func parseOne(t *testing.T, data string) *models.ProxyConfig {
+	t.Helper()
+	result, err := NewParser().Parse(data)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(result.Configs) != 1 {
+		t.Fatalf("expected 1 config, got %d", len(result.Configs))
+	}
+	return result.Configs[0]
+}
+
+func vmessQR(fields string) string {
+	return "vmess://" + base64.StdEncoding.EncodeToString([]byte(fields))
+}
+
+// libXray emits the REALITY key only as realitySettings.password; it must still end up
+// in PublicKey, or xray-core rejects the outbound with `empty "password"`.
+func TestParseShareLink_RealityKey(t *testing.T) {
+	pc := parseOne(t, "vless://1e358465-bb5f-4a3b-bdc1-c02e1c30be94@203.0.113.10:443?type=tcp&security=reality&sni=example.com&fp=chrome&pbk="+testRealityKey+"&sid=d44019b1bc0b1d9a&flow=xtls-rprx-vision#Reality%20NL")
+	if pc.PublicKey != testRealityKey || pc.ShortID != "d44019b1bc0b1d9a" || pc.SNI != "example.com" {
+		t.Errorf("reality fields: pbk=%q sid=%q sni=%q", pc.PublicKey, pc.ShortID, pc.SNI)
+	}
+	if pc.Protocol != "vless" || pc.Security != "reality" || pc.Type != "tcp" || pc.Flow != "xtls-rprx-vision" || pc.Name != "Reality NL" {
+		t.Errorf("got protocol=%q security=%q type=%q flow=%q name=%q", pc.Protocol, pc.Security, pc.Type, pc.Flow, pc.Name)
+	}
+}
+
+func TestConvertOutboundJSON_RealityPasswordKey(t *testing.T) {
+	p := NewParser()
+	for name, reality := range map[string]string{
+		"password":           `{"serverName":"example.com","fingerprint":"chrome","password":"` + testRealityKey + `"}`,
+		"publicKey":          `{"serverName":"example.com","fingerprint":"chrome","publicKey":"` + testRealityKey + `"}`,
+		"password overrides": `{"serverName":"example.com","fingerprint":"chrome","publicKey":"stale","password":"` + testRealityKey + `"}`,
+	} {
+		raw := []byte(`{"protocol":"vless","tag":"R","settings":{"vnext":[{"address":"203.0.113.10","port":443,"users":[{"id":"1e358465-bb5f-4a3b-bdc1-c02e1c30be94","encryption":"none"}]}]},"streamSettings":{"network":"raw","security":"reality","realitySettings":` + reality + `}}`)
+		pc, err := p.convertOutbound(raw, 0, nil)
+		if err != nil || pc == nil {
+			t.Fatalf("%s: convert err=%v pc=%v", name, err, pc)
+		}
+		if pc.PublicKey != testRealityKey {
+			t.Errorf("%s: PublicKey = %q", name, pc.PublicKey)
+		}
+	}
+}
+
+// libXray dropped v2rayN vmess://base64(JSON) links; they are converted to VMessAEAD
+// URIs first, so they keep parsing as before.
+func TestParseShareLink_VMessQR(t *testing.T) {
+	pc := parseOne(t, vmessQR(`{"v":"2","ps":"VMess WS","add":"vm.example.com","port":"443","id":"b4f0644f-9c25-4c67-83f0-621997cb87b2","aid":"0","scy":"auto","net":"ws","type":"none","host":"cdn.example.com","path":"/vm","tls":"tls"}`))
+	if pc.Protocol != "vmess" || pc.Server != "vm.example.com" || pc.Port != 443 || pc.UUID != "b4f0644f-9c25-4c67-83f0-621997cb87b2" {
+		t.Errorf("got protocol=%q %s:%d uuid=%q", pc.Protocol, pc.Server, pc.Port, pc.UUID)
+	}
+	if pc.Type != "ws" || pc.Path != "/vm" || pc.Host != "cdn.example.com" || pc.Security != "tls" || pc.Name != "VMess WS" {
+		t.Errorf("got type=%q path=%q host=%q security=%q name=%q", pc.Type, pc.Path, pc.Host, pc.Security, pc.Name)
+	}
+	// Without "sni", the WebSocket Host is the SNI, as with libXray's former QR importer.
+	if pc.SNI != "cdn.example.com" {
+		t.Errorf("SNI = %q, want the ws host", pc.SNI)
+	}
+
+	grpc := parseOne(t, vmessQR(`{"ps":"VMess gRPC","add":"198.51.100.10","port":443,"id":"b4f0644f-9c25-4c67-83f0-621997cb87b2","net":"grpc","type":"multi","path":"Pp4TYP7CSS","tls":"tls","sni":"g.example.com"}`))
+	if grpc.Type != "grpc" || grpc.ServiceName != "Pp4TYP7CSS" || !grpc.MultiMode || grpc.SNI != "g.example.com" {
+		t.Errorf("grpc QR: type=%q service=%q multi=%v sni=%q", grpc.Type, grpc.ServiceName, grpc.MultiMode, grpc.SNI)
+	}
+}
+
+func TestVmessQRToURI(t *testing.T) {
+	p := NewParser()
+	uri, ok := p.vmessQRToURI(vmessQR(`{"ps":"v6","add":"2001:db8::1","port":"10086","id":"b4f0644f-9c25-4c67-83f0-621997cb87b2","net":"tcp","type":"http","host":"h.example.com","path":"/p","scy":"aes-128-gcm"}`))
+	if !ok {
+		t.Fatal("expected a converted link")
+	}
+	want := "vmess://b4f0644f-9c25-4c67-83f0-621997cb87b2@[2001:db8::1]:10086?encryption=aes-128-gcm&headerType=http&host=h.example.com&path=%2Fp&type=tcp#v6"
+	if uri != want {
+		t.Errorf("uri = %q\nwant  %q", uri, want)
+	}
+	for _, link := range []string{
+		"vmess://b4f0644f-9c25-4c67-83f0-621997cb87b2@vm.example.com:443?type=ws#aead",
+		vmessQR(`{"add":"vm.example.com","port":"0","id":"x"}`),
+		vmessQR(`not json`),
+	} {
+		if _, ok := p.vmessQRToURI(link); ok {
+			t.Errorf("%q should not be converted", link)
+		}
+	}
+
+	// Forms libXray's former QR importer accepted: a float port, padded "add", and an
+	// id with "+" (passed as the UUID xray-core derives, since "+" would turn into a
+	// space on the way through libXray).
+	uri, ok = p.vmessQRToURI(vmessQR(`{"add":" vm.example.com ","port":443.0,"id":"908ddd9f+7081fd86","net":"tcp"}`))
+	derived, err := uuid.ParseString("908ddd9f+7081fd86")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "vmess://" + derived.String() + "@vm.example.com:443?type=tcp"; !ok || uri != want {
+		t.Errorf("uri = %q (ok=%v)\nwant  %q", uri, ok, want)
+	}
+}
+
+// libXray rejects Hysteria2 links with insecure=1; the checker drops the flag (it
+// verifies TLS anyway) and reads the port hopping libXray emits as a udphop mask.
+func TestParseShareLink_Hysteria2(t *testing.T) {
+	pc := parseOne(t, "hysteria2://BZknC9wzd1MG@hy.example.com:443?sni=hy.example.com&insecure=1&obfs=salamander&obfs-password=gTzGgKZhQR&ports=20000-30000&hop-interval=15#HY2")
+	if pc.Protocol != "hysteria" || pc.Server != "hy.example.com" || pc.HysteriaAuth != "BZknC9wzd1MG" || pc.Name != "HY2" {
+		t.Errorf("got protocol=%q server=%q auth=%q name=%q", pc.Protocol, pc.Server, pc.HysteriaAuth, pc.Name)
+	}
+	if pc.HysteriaObfs != "salamander" || pc.HysteriaObfsPassword != "gTzGgKZhQR" {
+		t.Errorf("obfs=%q password=%q", pc.HysteriaObfs, pc.HysteriaObfsPassword)
+	}
+	if pc.HysteriaPorts != "20000-30000" || pc.HysteriaHopInterval != 15 || pc.Port != 20000 {
+		t.Errorf("hopping ports=%q interval=%d port=%d", pc.HysteriaPorts, pc.HysteriaHopInterval, pc.Port)
+	}
+}
+
+func TestNormalizeHysteria2Link(t *testing.T) {
+	cases := map[string]string{
+		"hy2://a@h:443?insecure=1&sni=h#n":                                           "hy2://a@h:443?sni=h#n",
+		"hysteria2://a@h:443?allowInsecure=true":                                     "hysteria2://a@h:443",
+		"hy2://a@h:443?sni=h&insecure=0&obfs=salamander":                             "hy2://a@h:443?sni=h&obfs=salamander",
+		"hy2://a@h:443#no-query":                                                     "hy2://a@h:443#no-query",
+		"hy2://a@h:443?sni=h&pinSHA256=e27e3b209329211967c23f1d912a284161e1bf70ea72": "hy2://a@h:443?sni=h",
+		"hy2://a@h:443?sni=h&sni=other":                                              "hy2://a@h:443?sni=h",
+		"hy2://a@h:443?security=none&obfs-password=xyzw":                             "hy2://a@h:443",
+		"hy2://a@h:443?hop-interval=30":                                              "hy2://a@h:443",
+		"hy2://a@h:443?ports=20000-30000&hop-interval=30":                            "hy2://a@h:443?ports=20000-30000&hop-interval=30",
+		"hy2://a@h:20000-30000?hop-interval=30":                                      "hy2://a@h:20000-30000?hop-interval=30",
+		"hy2://a@[2001:db8::1]:443,8443/?hop-interval=30":                            "hy2://a@[2001:db8::1]:443,8443/?hop-interval=30",
+	}
+	for in, want := range cases {
+		if got := normalizeHysteria2Link(in); got != want {
+			t.Errorf("normalizeHysteria2Link(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// libXray (v26.9.30+) takes the server address as SNI for vless/vmess links without
+// "sni"; a TLS WebSocket link keeps its WebSocket Host as SNI, as before.
+func TestParseShareLink_WSHostAsSNI(t *testing.T) {
+	pc := parseOne(t, "vless://9c24b220-1ac5-42fb-8191-e26a664e42b0@198.51.100.50:443?encryption=none&security=tls&type=ws&host=cdn.example.com&path=%2Fws#WS")
+	if pc.SNI != "cdn.example.com" || pc.Host != "cdn.example.com" || pc.Path != "/ws" {
+		t.Errorf("got sni=%q host=%q path=%q", pc.SNI, pc.Host, pc.Path)
+	}
+	pc = parseOne(t, "vmess://2cd29f9b-38b0-4f14-8e79-fedef9e51acc@198.51.100.52:443?security=tls&type=ws&host=cdn.example.com&sni=edge.example.com#VM")
+	if pc.SNI != "edge.example.com" {
+		t.Errorf("an explicit sni must win, got %q", pc.SNI)
+	}
+}
+
+// A trojan:// link without a query implies TLS; libXray applies that default only to
+// links with a query, and xray-core refuses plaintext Trojan to public addresses.
+func TestParseShareLink_TrojanWithoutQuery(t *testing.T) {
+	pc := parseOne(t, "trojan://Q4tFxBY5LMw5@tr.example.com:443#Bare")
+	if pc.Protocol != "trojan" || pc.Security != "tls" || pc.Name != "Bare" {
+		t.Errorf("got protocol=%q security=%q name=%q", pc.Protocol, pc.Security, pc.Name)
+	}
+	if got := trojanDefaultTLS("trojan://pw@tr.example.com:443?type=ws#x"); got != "trojan://pw@tr.example.com:443?type=ws#x" {
+		t.Errorf("a link with a query must stay as is, got %q", got)
+	}
+	if got := trojanDefaultTLS("trojan://pw@tr.example.com:443?#x"); got != "trojan://pw@tr.example.com:443?security=tls#x" {
+		t.Errorf("an empty query counts as none, got %q", got)
+	}
+}
+
+func TestNormalizeTransportQuery(t *testing.T) {
+	const id = "9c24b220-1ac5-42fb-8191-e26a664e42b0"
+	cases := map[string]string{
+		"vless://" + id + "@198.51.100.50:443?security=tls&type=ws&host=cdn.example.com&path=%2Fws#WS":          "vless://" + id + "@198.51.100.50:443?host=cdn.example.com&path=%2Fws&security=tls&sni=cdn.example.com&type=ws#WS",
+		"vless://" + id + "@198.51.100.50:443?security=tls&type=ws&host=cdn.example.com&sni=#WS":                "vless://" + id + "@198.51.100.50:443?host=cdn.example.com&security=tls&sni=cdn.example.com&type=ws#WS",
+		"vless://" + id + "@203.0.113.10:443?type=grpc&serviceName=Pp4TYP7CSS&mode=guna&security=tls#G":         "vless://" + id + "@203.0.113.10:443?security=tls&serviceName=Pp4TYP7CSS&type=grpc#G",
+		"vless://" + id + "@203.0.113.10:443?type=grpc&serviceName=Pp4TYP7CSS&mode=multi&security=tls#G":        "vless://" + id + "@203.0.113.10:443?type=grpc&serviceName=Pp4TYP7CSS&mode=multi&security=tls#G",
+		"vless://" + id + "@198.51.100.50:443?security=tls&type=ws&host=cdn.example.com&sni=edge.example.com#W": "vless://" + id + "@198.51.100.50:443?security=tls&type=ws&host=cdn.example.com&sni=edge.example.com#W",
+	}
+	for in, want := range cases {
+		if got := normalizeTransportQuery(in); got != want {
+			t.Errorf("normalizeTransportQuery(%q)\n got %q\nwant %q", in, got, want)
+		}
+	}
+}
+
+func TestShareLinkLabel(t *testing.T) {
+	cases := map[string]string{
+		"vless://9c24b220-1ac5-42fb-8191-e26a664e42b0@203.0.113.10:443?pbk=k&sid=s#Node": "vless://203.0.113.10:443#Node",
+		"ss://YWVzLTI1Ni1nY206QmdvcXMxU3RXT3B2@198.51.100.20:8388":                       "ss://198.51.100.20:8388",
+		vmessQR(`{"add":"vm.example.com","port":443,"id":"secret-id"}`):                  "vmess://",
+		"hy2://D9hxfGAZhlCn@hy.example.com:20000-30000?sni=hy.example.com":               "hy2://",
+		"proxies:": "(not a share link)",
+	}
+	for in, want := range cases {
+		if got := shareLinkLabel(in); got != want {
+			t.Errorf("shareLinkLabel(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestShareLinkLines(t *testing.T) {
+	data := strings.Join([]string{
+		"# comment",
+		"STATUS=ok",
+		"vless://a1da3217-32e7-4301-b862-9e850fbc1d55@info.example.com:1?type=tcp#placeholder",
+		"vless://a1da3217-32e7-4301-b862-9e850fbc1d55@203.0.113.10:443?type=tcp#real",
+		"  trojan://Q4tFxBY5LMw5@tr.example.com:443?security=tls#t  ",
+	}, "\n")
+	lines := shareLinkLines([]byte(data))
+	if len(lines) != 2 || !strings.HasSuffix(lines[0], "#real") || !strings.HasPrefix(lines[1], "trojan://") {
+		t.Errorf("lines = %q", lines)
+	}
+}
+
+// libXray dropped Clash/Mihomo YAML; such a subscription fails with a clear error
+// instead of being fed line by line to libXray (which would log its credentials).
+func TestParse_ClashYAMLRejected(t *testing.T) {
+	yaml := "proxies:\n  - name: \"n\"\n    type: trojan\n    server: tr.example.com\n    port: 443\n    password: 54gG4Cg3wXzU\n"
+	_, err := NewParser().Parse(yaml)
+	if err == nil || !strings.Contains(err.Error(), "YAML") {
+		t.Fatalf("expected a Clash YAML error, got %v", err)
+	}
+	if _, err := NewParser().Parse(base64.StdEncoding.EncodeToString([]byte(yaml))); err == nil || !strings.Contains(err.Error(), "YAML") {
+		t.Fatalf("expected a Clash YAML error for the base64 form, got %v", err)
+	}
+}
+
+// Port hopping in JSON subscriptions: the udphop mask of xray-core v26.9+ and the
+// older quicParams.udpHop, whose interval is a number or a string.
+func TestConvertOutboundJSON_HysteriaHopping(t *testing.T) {
+	p := NewParser()
+	base := `{"protocol":"hysteria","tag":"H","settings":{"version":2,"address":"hy.example.com","port":443},"streamSettings":{"network":"hysteria","security":"tls","tlsSettings":{"serverName":"hy.example.com"},"hysteriaSettings":{"version":2,"auth":"BZknC9wzd1MG"},"finalmask":%s}}`
+	cases := map[string]string{
+		"udphop mask":           `{"udp":[{"type":"salamander","settings":{"password":"gTzGgKZhQR"}},{"type":"udphop","settings":{"mode":"intervalLocal,intervalRemote","remotePorts":"20000-30000","interval":"15"}}]}`,
+		"legacy udpHop, number": `{"quicParams":{"udpHop":{"ports":"20000-30000","interval":15}}}`,
+		"legacy udpHop, string": `{"quicParams":{"udpHop":{"ports":"20000-30000","interval":"15-30"}}}`,
+	}
+	for name, mask := range cases {
+		pc, err := p.convertOutbound([]byte(fmt.Sprintf(base, mask)), 0, nil)
+		if err != nil || pc == nil {
+			t.Fatalf("%s: convert err=%v pc=%v", name, err, pc)
+		}
+		if pc.HysteriaPorts != "20000-30000" || pc.HysteriaHopInterval != 15 {
+			t.Errorf("%s: ports=%q interval=%d", name, pc.HysteriaPorts, pc.HysteriaHopInterval)
+		}
+	}
+}
+
+// A base64-wrapped JSON subscription takes the JSON path, like a plain one.
+func TestParse_Base64WrappedJSON(t *testing.T) {
+	body := `[{"remarks":"NL","outbounds":[{"protocol":"trojan","tag":"proxy","settings":{"servers":[{"address":"203.0.113.20","port":443,"password":"njxUp6qTDxkj"}]},"streamSettings":{"network":"tcp","security":"tls","tlsSettings":{"serverName":"nl.example.com"}}}]}]`
+	pc := parseOne(t, base64.StdEncoding.EncodeToString([]byte(body)))
+	if pc.Name != "NL" || pc.Protocol != "trojan" || pc.Server != "203.0.113.20" || pc.SNI != "nl.example.com" {
+		t.Errorf("got name=%q protocol=%q server=%q sni=%q", pc.Name, pc.Protocol, pc.Server, pc.SNI)
+	}
+}
+
+// Share links keep their subscription order and #fragment names; a link xray-core
+// refuses to build (plaintext VLESS to a public host) is left out.
+func TestParseShareLinks_OrderAndNames(t *testing.T) {
+	links := strings.Join([]string{
+		"vless://1e358465-bb5f-4a3b-bdc1-c02e1c30be94@203.0.113.10:443?type=grpc&security=reality&sni=example.com&fp=chrome&pbk=" + testRealityKey + "&sid=b1235cff967d8d6d&serviceName=Pp4TYP7CSS#A",
+		"trojan://njxUp6qTDxkj@tr.example.com:443?security=tls&sni=tr.example.com&type=ws&path=%2Ftr&host=tr.example.com#B",
+		"ss://YWVzLTI1Ni1nY206QmdvcXMxU3RXT3B2@198.51.100.20:8388#C",
+		"vless://1e358465-bb5f-4a3b-bdc1-c02e1c30be94@public.example.com:80?type=ws&security=none#Dropped",
+	}, "\n")
+	result, err := NewParser().Parse(links)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	var names []string
+	for _, pc := range result.Configs {
+		names = append(names, pc.Name)
+	}
+	if strings.Join(names, ",") != "A,B,C" {
+		t.Fatalf("names = %v, want [A B C]", names)
+	}
+	if a := result.Configs[0]; a.Type != "grpc" || a.ServiceName != "Pp4TYP7CSS" || a.PublicKey != testRealityKey {
+		t.Errorf("A: type=%q service=%q pbk=%q", a.Type, a.ServiceName, a.PublicKey)
+	}
+	if b := result.Configs[1]; b.Type != "ws" || b.Path != "/tr" || b.Host != "tr.example.com" || b.SNI != "tr.example.com" {
+		t.Errorf("B: type=%q path=%q host=%q sni=%q", b.Type, b.Path, b.Host, b.SNI)
+	}
+	if c := result.Configs[2]; c.Protocol != "shadowsocks" || c.Method != "aes-256-gcm" || c.Password != "Bgoqs1StWOpv" {
+		t.Errorf("C: protocol=%q method=%q password=%q", c.Protocol, c.Method, c.Password)
 	}
 }
