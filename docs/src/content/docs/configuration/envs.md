@@ -50,13 +50,15 @@ Time in seconds between subscription update checks. Only used when `SUBSCRIPTION
 
 Requests the subscription as a full Xray JSON config instead of the default Base64 link list. Enable this for panels that serve JSON (e.g. Remnawave) and for subscriptions that use **balancers**: every outbound inside a balancer group is expanded into an individually checked proxy, so a single down node no longer hides behind the group. When enabled, the request is sent with an app-like `User-Agent` (overridable via `SUBSCRIPTION_USER_AGENT`). See [Subscription Format](/configuration/subscription#6-json-subscription-balancers).
 
+This option belongs to the Xray backend. `true` is rejected when `PROXY_ENGINE=mihomo`.
+
 ### SUBSCRIPTION_USER_AGENT
 
 - CLI: `--subscription-user-agent`
 - Required: No
 - Default: None
 
-Overrides the `User-Agent` header sent when fetching a subscription. Useful for panels that return different content per client. When unset, Xray Checker uses `Xray-Checker`, or an app-like agent when `SUBSCRIPTION_JSON_FORMAT` is enabled.
+Overrides the `User-Agent` header sent when fetching a subscription. Useful for panels that return different content per client. When unset, the Xray backend uses `Xray-Checker`, or an app-like agent when `SUBSCRIPTION_JSON_FORMAT` is enabled; the Mihomo backend uses `mihomo`.
 
 ### SUBSCRIPTION_HEADERS
 
@@ -70,6 +72,29 @@ Extra HTTP headers sent with every subscription request, each as a `Key: Value` 
 - **Environment**: separate pairs with commas: `SUBSCRIPTION_HEADERS="X-Token: abc, X-Region: eu"`
 
 ## Proxy
+
+### PROXY_ENGINE
+
+- CLI: `--proxy-engine`
+- Required: No
+- Default: `xray`
+- Values: `xray`, `mihomo`
+
+Selects the probe backend. `xray` uses the embedded core and existing Xray
+subscription formats. `mihomo` reads inline Mihomo proxy definitions and runs
+them through a separately installed executable, preserving options such as
+`smux`/h2mux and REALITY. See [Mihomo subscriptions](/configuration/subscription#10-mihomo-subscriptions-and-h2mux).
+
+### MIHOMO_BINARY
+
+- CLI: `--mihomo-binary`
+- Required: Only when using the Mihomo backend
+- Default: `mihomo`
+
+Executable name on `PATH` or path to a separately installed, compatible Mihomo
+binary. Pin its version in the deployment. The checker neither downloads nor
+updates this executable, and the standard Docker image does not bundle it.
+Ignored by the Xray backend.
 
 ### PROXY_CHECK_INTERVAL
 
@@ -163,6 +188,11 @@ For example, a proxy with server: mydomain.com will be duplicated for every IP r
 
 This allows Xray Checker to monitor each resolved endpoint individually.
 
+This expansion is available only with the Xray backend. Mihomo mode rejects
+`true` to preserve the original server hostname and implicit TLS SNI. Mihomo
+performs normal DNS resolution; use a proxy's `ip-version` option to select an
+address family when needed.
+
 **Important notes:**
 
 - This feature only works when the domain returns multiple IP addresses. If DNS returns only a single IP, no expansion will occur. Note that not all DNS providers return multiple IPs - for example, Amazon DNS typically returns only a single IP address.
@@ -239,7 +269,7 @@ See [Web Customization](/configuration/web-customization) for details.
 - Required: No
 - Default: `10000`
 
-Starting port number for SOCKS5 proxies. Each proxy will use sequential ports starting from this number.
+Starting port number for SOCKS5 proxies. Each proxy will use sequential ports starting from this number. This setting applies to both the Xray and Mihomo backends.
 
 ### XRAY_LOG_LEVEL
 

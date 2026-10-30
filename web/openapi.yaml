@@ -250,7 +250,7 @@ components:
           example: 443
         protocol:
           type: string
-          enum: [vless, vmess, trojan, shadowsocks, hysteria, socks, http, wireguard]
+          description: Proxy protocol; the Mihomo backend may expose additional supported protocol names
           example: "vless"
         proxyPort:
           type: integer
@@ -275,6 +275,10 @@ components:
           example:
             location: "Netherlands, Amsterdam"
             hoster: "FreeVDS"
+        generatedConfig:
+          type: object
+          additionalProperties: true
+          description: Optional sanitized Xray outbound when server details are enabled. Omitted for Mihomo proxies, whose raw definitions may contain credentials in arbitrary nested options.
 
     StatusResponse:
       type: object

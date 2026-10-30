@@ -3,7 +3,7 @@ title: Subscription Format
 description: Subscription format options and examples
 ---
 
-Xray Checker supports five different formats for proxy configuration. Use the [environment variable](/configuration/envs#subscription_url) `SUBSCRIPTION_URL` for setup.
+Xray Checker supports the configuration sources below. Use the [environment variable](/configuration/envs#subscription_url) `SUBSCRIPTION_URL` for setup. Embedded Xray is the default backend; [Mihomo subscriptions](#10-mihomo-subscriptions-and-h2mux) require `PROXY_ENGINE=mihomo` and a separately installed Mihomo executable.
 
 For information about how proxies are verified, see [check methods](/configuration/check-methods).
 
@@ -290,6 +290,173 @@ Notes:
 - Keys are sanitized to valid Prometheus label names (e.g. `data center` → `data_center`); keys that collide with built-in labels (`protocol`, `address`, `name`, `sub_name`, `stable_id`, `group_name`, `instance`) are ignored.
 - Labels are a JSON-subscription feature only — share links (`vless://`, …) have nowhere to carry them.
 - Changing a label and updating the subscription applies on the next refresh **without resetting other proxies' series to 0**. See [`metricsLabels` on metrics](/integrations/metrics#custom-labels).
+
+### 10. Mihomo Subscriptions and h2mux
+
+Select `PROXY_ENGINE=mihomo` to check proxies with the same native Mihomo options
+used by compatible clients. In particular, an enabled `smux.protocol: h2mux`
+is passed to Mihomo and used for the probe; it is not discarded during a
+conversion to Xray JSON.
+
+#### Core and input format
+
+Install a maintained [Mihomo release](https://github.com/MetaCubeX/mihomo/releases)
+for the checker machine's OS and architecture, verify the release checksum, and
+pin that version in your deployment. The core must support named SOCKS listeners
+with a `proxy` target and the options present in your subscription. Xray Checker
+does not bundle, download or update the Mihomo executable.
+
+The development test core is Mihomo **v1.19.33** on Linux.
+
+| Environment variable | CLI option | Default |
+| --- | --- | --- |
+| `PROXY_ENGINE` | `--proxy-engine` | `xray`; select `mihomo` for this mode |
+| `MIHOMO_BINARY` | `--mihomo-binary` | `mihomo`, resolved on `PATH` |
+| `XRAY_START_PORT` | `--xray-start-port` | `10000`, used by either backend |
+
+`SUBSCRIPTION_URL` can point to a full Mihomo YAML subscription or a provider
+document containing a nonempty inline `proxies` list. Local files use the usual
+`file:///absolute/path/subscription.yaml` source. JSON with the same top-level
+`proxies` shape is accepted too; `folder:///absolute/path/configs` reads
+`.yaml`, `.yml` and `.json` files in this mode. All sources in one Mihomo-mode checker must use
+this format; Xray JSON outbounds and share-link lists belong to the Xray backend.
+
+Each entry requires nonempty `name`, `type`, and `server` strings and a scalar
+`port` from 1 through 65535. A port-hopping entry with only `ports` and no `port`
+is not supported.
+
+For URL subscriptions, the default request `User-Agent` is `mihomo`.
+`SUBSCRIPTION_USER_AGENT` and custom `SUBSCRIPTION_HEADERS` can override it;
+update any existing Xray/Happ-specific override. With panels such as Remnawave,
+use the explicit Mihomo subscription URL, commonly the existing subscription
+URL followed by `/mihomo`, when that path is enabled by the panel. The monitoring
+account must have access to the desired inbounds and hosts in the Mihomo format.
+`SUBSCRIPTION_JSON_FORMAT=true` requests Xray JSON and is rejected in Mihomo mode.
+
+A VLESS/REALITY proxy may contain:
+
+```yaml
+proxies:
+  - name: H2MUX example
+    type: vless
+    server: proxy.example.com
+    port: 443
+    uuid: YOUR_USER_UUID
+    network: tcp
+    tls: true
+    servername: cover.example.com
+    client-fingerprint: chrome
+    reality-opts:
+      public-key: YOUR_REALITY_PUBLIC_KEY
+      short-id: YOUR_SHORT_ID
+      support-x25519mlkem768: true
+    smux:
+      enabled: true
+      protocol: h2mux
+      padding: true
+      min-streams: 8
+      max-connections: 2
+```
+
+Use the values supplied by your panel. Proxy transport options, `smux`, and
+`reality-opts` are preserved. The checker generates its own unique internal
+proxy names and retains the original server hostname for Mihomo's DNS resolution.
+`PROXY_RESOLVE_DOMAINS=true` is rejected in this mode because replacing the
+hostname with an IP can change implicit TLS SNI. Use the proxy's native
+`ip-version` option when you need to choose an address family.
+
+Only inline proxy entries are checked. Remote `proxy-providers` are not fetched;
+a provider-only document is rejected. Top-level routing rules, proxy groups,
+listeners, DNS, TUN, controller settings and scripts are not imported. Each
+checker-owned SOCKS listener targets one proxy directly. `dialer-proxy` chains
+are rejected rather than resolving through a group or falling back to another
+node. The candidate configuration is validated by the selected Mihomo executable.
+
+The core runs with the checker account's OS permissions. Native proxy options
+can reference local files, so use subscriptions from sources you trust.
+
+Checks use the existing HTTP-based `ip`, `status` or `download` method through
+each proxy's TCP path. They exercise h2mux when configured; they do not separately
+measure UDP health, multiplexing capacity or the negotiated TLS key-exchange group.
+
+#### Native OpenWrt ARM64 or Linux
+
+An OpenWrt machine reporting `aarch64` needs compatible Linux ARM64 checker and
+Mihomo executables. Place the selected versions in a separate test directory;
+these examples do not replace an existing router proxy service. The API port
+`2212` and SOCKS range beginning at `12000` allow a trial beside a checker using
+the defaults, provided those ports are free.
+
+```sh
+cd /opt/xray-checker-test
+export PROXY_ENGINE=mihomo
+export MIHOMO_BINARY=/opt/xray-checker-test/mihomo
+export SUBSCRIPTION_URL='https://subscription.example/PRIVATE_TOKEN/mihomo'
+export SUBSCRIPTION_JSON_FORMAT=false
+export XRAY_START_PORT=12000
+export METRICS_HOST=127.0.0.1
+export METRICS_PORT=2212
+./xray-checker
+```
+
+The checker needs an executable core and a writable working directory for its
+generated configuration. For a service deployment, store the private
+subscription URL in that service's protected environment configuration. Keep
+the running checker attached to the service manager so it can shut down its
+Mihomo child normally.
+
+#### Native Windows
+
+Install both matching Windows executables into a test directory. In PowerShell:
+
+```powershell
+Set-Location 'C:\Tools\xray-checker-test'
+$env:PROXY_ENGINE = 'mihomo'
+$env:MIHOMO_BINARY = 'C:\Tools\xray-checker-test\mihomo.exe'
+$env:SUBSCRIPTION_URL = 'https://subscription.example/PRIVATE_TOKEN/mihomo'
+$env:SUBSCRIPTION_JSON_FORMAT = 'false'
+$env:XRAY_START_PORT = '12000'
+$env:METRICS_HOST = '127.0.0.1'
+$env:METRICS_PORT = '2212'
+.\xray-checker.exe
+```
+
+After testing, apply the same variables to the checker service using its actual
+service manager and working directory. An unrelated system Xray or Mihomo
+service does not need to be replaced.
+
+#### Docker and existing status pages
+
+The standard checker image contains embedded Xray but **does not contain
+Mihomo**. To use this mode, supply a compatible Linux executable for the
+container's architecture and runtime, for example as a read-only bind mount:
+
+```yaml
+services:
+  xray-checker:
+    image: kutovoys/xray-checker
+    environment:
+      PROXY_ENGINE: mihomo
+      MIHOMO_BINARY: /opt/mihomo/mihomo
+      SUBSCRIPTION_URL: ${SUBSCRIPTION_URL}
+      SUBSCRIPTION_JSON_FORMAT: "false"
+    volumes:
+      - ./mihomo:/opt/mihomo/mihomo:ro
+    ports:
+      - "127.0.0.1:2212:2112"
+```
+
+The mounted file must be executable by the container user. Supply
+`SUBSCRIPTION_URL` through your deployment environment.
+
+`/api/v1/public/proxies`, proxy status endpoints and Prometheus metrics keep
+their existing structure, so status pages can consume this backend through the
+same API. The optional `generatedConfig` detail is omitted for Mihomo proxies
+because raw definitions can contain credentials in arbitrary nested options.
+
+Switching a proxy from the Xray backend to Mihomo produces a different stable ID
+and therefore new monitoring series, even if its address is unchanged. Existing
+status-page history is not automatically migrated between those identities.
 
 ## Custom Request Headers
 

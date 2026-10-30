@@ -1,6 +1,7 @@
 package subscription
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -30,7 +31,9 @@ const (
 	subscriptionJSONUserAgent = "Happ/1.0"
 )
 
-type Parser struct{}
+type Parser struct {
+	ctx context.Context
+}
 
 type fetchResult struct {
 	Content []byte
@@ -38,7 +41,14 @@ type fetchResult struct {
 }
 
 func NewParser() *Parser {
-	return &Parser{}
+	return NewParserWithContext(context.Background())
+}
+
+func NewParserWithContext(ctx context.Context) *Parser {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return &Parser{ctx: ctx}
 }
 
 type libXrayResponse struct {
@@ -239,6 +249,11 @@ type ParseResult struct {
 }
 
 func (p *Parser) Parse(subscriptionData string) (*ParseResult, error) {
+	if p.ctx != nil {
+		if err := p.ctx.Err(); err != nil {
+			return nil, err
+		}
+	}
 	sourceType := p.detectSourceType(subscriptionData)
 	logger.Debug("Detected source type: %s", sourceType)
 
@@ -250,7 +265,7 @@ func (p *Parser) Parse(subscriptionData string) (*ParseResult, error) {
 	case "url":
 		result, fetchErr := p.fetchURLContent(subscriptionData)
 		if fetchErr != nil {
-			return nil, fmt.Errorf("failed to fetch URL content: %v", fetchErr)
+			return nil, fmt.Errorf("failed to fetch URL content: %w", fetchErr)
 		}
 		rawData = result.Content
 		subName = result.Name
@@ -275,6 +290,16 @@ func (p *Parser) Parse(subscriptionData string) (*ParseResult, error) {
 	}
 
 	trimmedData := strings.TrimSpace(string(rawData))
+	if config.CLIConfig.Proxy.Engine == "mihomo" {
+		configs, parseErr := parseMihomoSubscription(rawData)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		return &ParseResult{Configs: configs, Name: subName}, nil
+	}
+	if isMihomoSubscription(rawData) {
+		return nil, fmt.Errorf("Mihomo subscription requires --proxy-engine=mihomo")
+	}
 	if strings.HasPrefix(trimmedData, "[") {
 		logger.Debug("Detected JSON array format")
 		configs, jsonErr := p.parseJSONConfigs(rawData)
@@ -858,7 +883,11 @@ func (p *Parser) detectSourceType(source string) string {
 func (p *Parser) fetchURLContent(source string) (*fetchResult, error) {
 	cleanURL, fragmentName := p.extractURLFragment(source)
 
-	req, err := http.NewRequest("GET", cleanURL, nil)
+	ctx := p.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", cleanURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -869,6 +898,9 @@ func (p *Parser) fetchURLContent(source string) (*fetchResult, error) {
 	case sub.UserAgent != "":
 		// Explicit override: the user controls exactly which client to impersonate.
 		req.Header.Set("User-Agent", sub.UserAgent)
+	case config.CLIConfig.Proxy.Engine == "mihomo":
+		req.Header.Set("User-Agent", "mihomo")
+		req.Header.Set("X-Hwid", subscriptionHWID)
 	case sub.JSONFormat:
 		// App-like headers so panels (e.g. Remnawave) return full JSON configs with
 		// individual grouped/balancer nodes instead of collapsed base64 share links.
@@ -1477,7 +1509,7 @@ func (p *Parser) parseFolder(folderPath string) ([]*models.ProxyConfig, error) {
 
 		fileName := entry.Name()
 		ext := strings.ToLower(filepath.Ext(fileName))
-		if ext != ".json" {
+		if ext != ".json" && !(config.CLIConfig.Proxy.Engine == "mihomo" && (ext == ".yaml" || ext == ".yml")) {
 			continue
 		}
 
@@ -1512,6 +1544,12 @@ func (p *Parser) parseFolder(folderPath string) ([]*models.ProxyConfig, error) {
 }
 
 func (p *Parser) parseSingleConfigFile(data []byte, startIndex int) ([]*models.ProxyConfig, error) {
+	if config.CLIConfig.Proxy.Engine == "mihomo" {
+		return parseMihomoSubscription(data)
+	}
+	if isMihomoSubscription(data) {
+		return nil, fmt.Errorf("Mihomo subscription requires --proxy-engine=mihomo")
+	}
 	trimmedData := strings.TrimSpace(string(data))
 
 	if strings.HasPrefix(trimmedData, "[") {

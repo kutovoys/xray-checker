@@ -1,0 +1,36 @@
+name: Test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Test with race detection
+        if: runner.os == 'Linux'
+        run: go test -race ./...
+      - name: Test Windows process lifecycle
+        if: runner.os == 'Windows'
+        run: go test ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Cross-compile Linux ARM64
+        if: runner.os == 'Linux'
+        env:
+          CGO_ENABLED: '0'
+          GOOS: linux
+          GOARCH: arm64
+        run: go build -o xray-checker-linux-arm64 .
