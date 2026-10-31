@@ -28,8 +28,9 @@ import (
 )
 
 var (
-	version   = "unknown"
-	startTime = time.Now()
+	version               = "unknown"
+	startTime             = time.Now()
+	errBackendUnavailable = errors.New("probe backend could not be restored")
 )
 
 func main() {
@@ -38,13 +39,15 @@ func main() {
 	}
 }
 
-func run() error {
+func run() (runErr error) {
 	config.Parse(version)
 	if err := config.CLIConfig.Validate(); err != nil {
 		return err
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	ctx, cancelCore := context.WithCancelCause(signalCtx)
+	defer cancelCore(nil)
 	var cycleMu sync.Mutex
 
 	logLevel := logger.ParseLevel(config.CLIConfig.LogLevel)
@@ -99,9 +102,41 @@ func run() error {
 	if err := coreRunner.Start(); err != nil {
 		return fmt.Errorf("start probe backend: %w", err)
 	}
+	var failures <-chan error
+	if supervised, ok := coreRunner.(probecore.SupervisedRunner); ok {
+		failures = supervised.Failures()
+	}
+	var coreFailure error
+	watchDone := make(chan struct{})
+	go func() {
+		defer close(watchDone)
+		select {
+		case coreFailure = <-failures:
+			cancelCore(coreFailure)
+		case <-ctx.Done():
+		}
+	}()
+	defer func() {
+		cancelCore(nil)
+		<-watchDone
+		// Stop may discover a dead child before its watcher has run. Also retain
+		// a failure consumed concurrently with cancellation during normal cleanup.
+		if coreFailure == nil {
+			select {
+			case coreFailure = <-failures:
+			default:
+			}
+		}
+		if coreFailure != nil && signalCtx.Err() == nil {
+			runErr = errors.Join(runErr, coreFailure)
+		}
+		if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, context.Canceled) && !errors.Is(runErr, cause) {
+			runErr = errors.Join(runErr, cause)
+		}
+	}()
 
 	defer func() {
-		stop()
+		cancelCore(nil)
 		cycleMu.Lock()
 		defer cycleMu.Unlock()
 		if err := coreRunner.Stop(); err != nil {
@@ -138,6 +173,9 @@ func run() error {
 		logger.Info("Starting proxy check iteration")
 		start := time.Now()
 		proxyChecker.CheckAllProxies()
+		if ctx.Err() != nil {
+			return
+		}
 		elapsed := time.Since(start)
 
 		// Warn if a cycle overruns the interval: with PROXY_CHECK_CONCURRENCY set,
@@ -176,7 +214,9 @@ func run() error {
 
 	if config.CLIConfig.RunOnce {
 		runCheckIteration()
-		logger.Info("Check completed")
+		if ctx.Err() == nil {
+			logger.Info("Check completed")
+		}
 		return nil
 	}
 
@@ -219,6 +259,9 @@ func run() error {
 			if !xray.IsConfigsEqual(*proxyConfigs, newConfigs) {
 				if err := updateConfiguration(newConfigs, proxyConfigs, coreRunner, proxyChecker); err != nil {
 					logger.Error("Error updating configuration: %v", err)
+					if errors.Is(err, errBackendUnavailable) {
+						cancelCore(err)
+					}
 				} else {
 					// Immediately re-check the new proxy set so /metrics is repopulated
 					// right away instead of staying empty until the next scheduled check
@@ -234,7 +277,7 @@ func run() error {
 		defer updateScheduler.Stop()
 	}
 	// Run before scheduler cleanup on any exit, including an HTTP bind failure.
-	defer stop()
+	defer cancelCore(nil)
 
 	mux, err := web.NewPrefixServeMux(config.CLIConfig.Metrics.BasePath)
 	if err != nil {
@@ -350,10 +393,10 @@ func replaceConfiguration(newConfigs []*models.ProxyConfig, currentConfigs *[]*m
 	rollback := func(cause error) error {
 		_ = coreRunner.Stop()
 		if err := os.WriteFile(configFile, previous, 0600); err != nil {
-			return errors.Join(cause, fmt.Errorf("restore previous configuration: %w", err))
+			return errors.Join(errBackendUnavailable, cause, fmt.Errorf("restore previous configuration: %w", err))
 		}
 		if err := coreRunner.Start(); err != nil {
-			return errors.Join(cause, fmt.Errorf("restart previous backend: %w", err))
+			return errors.Join(errBackendUnavailable, cause, fmt.Errorf("restart previous backend: %w", err))
 		}
 		return cause
 	}

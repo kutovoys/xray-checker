@@ -13,6 +13,13 @@ type Runner interface {
 	Stop() error
 }
 
+// SupervisedRunner reports unexpected exits across configuration reloads.
+// Failed starts and intentional stops are returned by Start/Stop instead.
+type SupervisedRunner interface {
+	Runner
+	Failures() <-chan error
+}
+
 type Generator interface {
 	GenerateValidatedConfig([]*models.ProxyConfig, int, string, string) ([]*models.ProxyConfig, error)
 }

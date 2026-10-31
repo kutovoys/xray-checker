@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import secrets
 import shutil
+import signal
 import socket
 import ssl
 import struct
@@ -308,7 +309,7 @@ def run(args, directory):
     try:
         server = start("xray", [args.xray, "run", "-config", str(config_path)])
         wait_for("REALITY listener", lambda: listening(server_port), server)
-        checker = start("checker", [
+        checker_command = [
             args.checker,
             "--proxy-engine=mihomo", f"--mihomo-binary={args.mihomo}",
             f"--subscription-url={subscription.as_uri()}",
@@ -318,7 +319,8 @@ def run(args, directory):
             f"--proxy-status-check-url=http://{LOOPBACK}:{origin.server_port}/generate_204",
             f"--proxy-ip-check-url=http://{LOOPBACK}:{origin.server_port}/ip",
             "--proxy-timeout=2", "--proxy-check-interval=1", "--log-level=info",
-        ])
+        ]
+        checker = start("checker", checker_command)
         initial = wait_for("successful and rejected REALITY users", checked_pair, checker)
         if Origin.status_requests == 0:
             raise AssertionError("No traffic reached the protected test origin")
@@ -374,6 +376,40 @@ def run(args, directory):
         if child_pids:
             wait_for("Mihomo child cleanup", lambda: all(not process_alive(pid) for pid in child_pids))
         print("PASS: checker shutdown closes its listeners and reaps the external core")
+
+        if sys.platform.startswith("linux"):
+            # Use a valid, unchanged subscription so the sole child is the
+            # ready core, not a short-lived configuration validation process.
+            atomic_text(subscription, subscription_text(
+                server_port, public_key, short_id, valid_uuid, invalid_uuid,
+                max_connections=2,
+            ))
+            wait_for("checker API shutdown", lambda: not listening(api_port), timeout=10)
+            checker = start("checker-child-exit", checker_command)
+            wait_for("ready checker before core failure", checked_pair, checker)
+            child_pids = children_of(checker.pid)
+            if len(child_pids) != 1:
+                raise AssertionError("Expected exactly one owned ready Mihomo child")
+            os.kill(next(iter(child_pids)), signal.SIGKILL)
+            try:
+                exit_code = checker.wait(timeout=10)
+            except subprocess.TimeoutExpired as exc:
+                raise AssertionError("Checker stayed running after its Mihomo child died") from exc
+            if exit_code == 0:
+                raise AssertionError("Unexpected Mihomo exit did not fail the checker")
+            wait_for(
+                "checker listeners closing after core failure",
+                lambda: not any(listening(port) for port in (api_port, socks_port, socks_port + 1)),
+                timeout=5,
+            )
+            wait_for(
+                "failed Mihomo child cleanup",
+                lambda: all(not process_alive(pid) for pid in child_pids),
+                timeout=5,
+            )
+            print("PASS: unexpected Mihomo exit fails the checker and closes its listeners")
+        else:
+            print("SKIP: unexpected Mihomo exit check requires Linux /proc child ownership")
     finally:
         for proc in reversed(processes):
             if proc.poll() is None:

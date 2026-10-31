@@ -160,6 +160,23 @@ func TestRunnerStartStopAndRestart(t *testing.T) {
 	if err := r.Start(); err != nil {
 		t.Fatalf("restart failed: %v", err)
 	}
+	process := r.process
+	if err := r.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	// Run the observer synchronously too, so even a delayed old-child watcher
+	// cannot turn an intentional stop/reload into a failure.
+	r.watchProcess(process)
+	assertNoRunnerFailure(t, r)
+}
+
+func assertNoRunnerFailure(t *testing.T, r *Runner) {
+	t.Helper()
+	select {
+	case err := <-r.Failures():
+		t.Fatalf("unexpected backend failure: %v", err)
+	default:
+	}
 }
 
 func TestRunnerRejectsOccupiedPort(t *testing.T) {
@@ -190,6 +207,7 @@ func TestRunnerFailedStartupReapsChild(t *testing.T) {
 			if r.process != nil || r.workDir != "" || socksReady(address) {
 				t.Fatal("failed startup leaked child resources")
 			}
+			assertNoRunnerFailure(t, r)
 		})
 	}
 }
@@ -205,7 +223,75 @@ func TestRunnerCanRestartAfterUnexpectedChildExit(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-process.done
+	select {
+	case err := <-r.Failures():
+		if err == nil || strings.Contains(err.Error(), "fixture-secret-password") {
+			t.Fatalf("invalid child-exit error: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("active child exit was not reported")
+	}
 	if err := r.Start(); err != nil {
 		t.Fatalf("restart after child exit failed: %v", err)
+	}
+	// A stale observer must not report the previous child after replacement.
+	r.watchProcess(process)
+	assertNoRunnerFailure(t, r)
+}
+
+func TestRunnerStopPreservesExitBeforeWatcherRuns(t *testing.T) {
+	t.Setenv("XRAY_CHECKER_MIHOMO_HELPER", "serve")
+	r, _ := runnerFixture(t)
+	if err := r.Start(); err != nil {
+		t.Fatal(err)
+	}
+	process := r.process
+	// Hold the mutex to delay observation, just as a concurrent final check or
+	// shutdown can. Stop must still preserve a failure that already happened.
+	func() {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		if err := process.cmd.Process.Kill(); err != nil {
+			t.Fatal(err)
+		}
+		<-process.done
+		if err := r.stopLocked(); err != nil {
+			t.Fatal(err)
+		}
+	}()
+	select {
+	case err := <-r.Failures():
+		if err == nil {
+			t.Fatal("missing child-exit error")
+		}
+	default:
+		t.Fatal("Stop hid the unexpected child exit")
+	}
+	r.watchProcess(process)
+	assertNoRunnerFailure(t, r)
+}
+
+func TestRunnerFailedCandidateDoesNotPoisonRollback(t *testing.T) {
+	t.Setenv("XRAY_CHECKER_MIHOMO_HELPER", "serve")
+	r, address := runnerFixture(t)
+	if err := r.Start(); err != nil {
+		t.Fatal(err)
+	}
+	previous := r.process
+	if err := r.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XRAY_CHECKER_MIHOMO_HELPER", "exit")
+	if err := r.Start(); err == nil {
+		t.Fatal("candidate unexpectedly started")
+	}
+	t.Setenv("XRAY_CHECKER_MIHOMO_HELPER", "serve")
+	if err := r.Start(); err != nil {
+		t.Fatalf("rollback failed: %v", err)
+	}
+	r.watchProcess(previous)
+	assertNoRunnerFailure(t, r)
+	if !socksReady(address) {
+		t.Fatal("rollback listener is not ready")
 	}
 }

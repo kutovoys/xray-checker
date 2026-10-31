@@ -27,6 +27,9 @@ The test checks that:
 - An invalid replacement subscription preserves the working configuration.
 - SIGTERM stops the owned Mihomo child and its listeners. Child ownership is
   also checked through `/proc` on Linux.
+- On Linux, killing a ready Mihomo child makes the checker exit nonzero within
+  ten seconds, close its API and proxy listeners, and reap the child. This
+  ownership-based failure check is explicitly skipped on other platforms.
 
 Use `--keep-workdir` to retain private logs for a failed run. The reported
 temporary directory contains only generated test credentials; delete it when

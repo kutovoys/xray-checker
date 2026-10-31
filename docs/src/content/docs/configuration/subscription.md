@@ -321,6 +321,9 @@ document containing a nonempty inline `proxies` list. Local files use the usual
 `.yaml`, `.yml` and `.json` files in this mode. All sources in one Mihomo-mode checker must use
 this format; Xray JSON outbounds and share-link lists belong to the Xray backend.
 
+Explicit `base64://` and `data:text/plain;base64,` sources decode the payload
+before parsing its native YAML or JSON format.
+
 Each entry requires nonempty `name`, `type`, and `server` strings and a scalar
 `port` from 1 through 65535. A port-hopping entry with only `ports` and no `port`
 is not supported.
@@ -371,6 +374,11 @@ listeners, DNS, TUN, controller settings and scripts are not imported. Each
 checker-owned SOCKS listener targets one proxy directly. `dialer-proxy` chains
 are rejected rather than resolving through a group or falling back to another
 node. The candidate configuration is validated by the selected Mihomo executable.
+
+If the running Mihomo process exits unexpectedly, the checker cancels its checks,
+closes the HTTP server and exits with an error. Configure your service manager to
+restart the checker on failure. Normal shutdown and successful configuration
+reloads do not trigger this failure path.
 
 The core runs with the checker account's OS permissions. Native proxy options
 can reference local files, so use subscriptions from sources you trust.

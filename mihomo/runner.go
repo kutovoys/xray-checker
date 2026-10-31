@@ -21,10 +21,12 @@ const (
 )
 
 type childProcess struct {
-	cmd   *exec.Cmd
-	done  chan struct{}
-	err   error // read only after done closes
-	guard processGuard
+	cmd      *exec.Cmd
+	done     chan struct{}
+	err      error // read only after done closes
+	guard    processGuard
+	ready    bool // protected by Runner.mu
+	reported bool // protected by Runner.mu
 }
 
 type Runner struct {
@@ -32,6 +34,7 @@ type Runner struct {
 	configFile   string
 	mu           sync.Mutex
 	process      *childProcess
+	failures     chan error
 	workDir      string
 	startTimeout time.Duration
 	stopTimeout  time.Duration
@@ -41,6 +44,7 @@ func NewRunner(binary, configFile string) *Runner {
 	return &Runner{
 		binary:       binary,
 		configFile:   configFile,
+		failures:     make(chan error, 1),
 		startTimeout: defaultStartTimeout,
 		stopTimeout:  defaultStopTimeout,
 	}
@@ -103,7 +107,38 @@ func (r *Runner) Start() error {
 		_ = r.stopLocked()
 		return err
 	}
+	process.ready = true
+	go r.watchProcess(process)
 	return nil
+}
+
+// Failures reports an unexpected exit of an active, ready child. The channel
+// survives configuration reloads; failed starts and intentional stops are not
+// failures. Callers should stop the checker so its service manager can recover.
+func (r *Runner) Failures() <-chan error { return r.failures }
+
+func (r *Runner) watchProcess(process *childProcess) {
+	<-process.done
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.process != process {
+		// Stop or a subsequent Start already retired this child.
+		return
+	}
+	r.reportExitLocked(process)
+}
+
+func (r *Runner) reportExitLocked(process *childProcess) {
+	if !process.ready || process.reported {
+		return
+	}
+	process.reported = true
+	// Child output can contain proxy credentials. Keep the failure generic, and
+	// never block cleanup if the caller is already shutting down or not watching.
+	select {
+	case r.failures <- fmt.Errorf("Mihomo probe backend exited unexpectedly"):
+	default:
+	}
 }
 
 func (process *childProcess) run(started chan<- error) {
@@ -173,6 +208,9 @@ func (r *Runner) stopLocked() error {
 	}
 	select {
 	case <-process.done:
+		// A final probe can finish before the watcher runs. Preserve that failure
+		// even when its caller immediately stops the backend (e.g. --run-once).
+		r.reportExitLocked(process)
 	default:
 		if err := terminateProcess(process.cmd); err != nil {
 			_ = process.cmd.Process.Kill()

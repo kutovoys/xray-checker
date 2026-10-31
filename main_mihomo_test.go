@@ -148,8 +148,32 @@ func TestReplaceConfigurationStartFailureRestoresPreviousState(t *testing.T) {
 	if !errors.Is(err, startErr) {
 		t.Fatalf("error = %v, want candidate startup error", err)
 	}
+	if errors.Is(err, errBackendUnavailable) {
+		t.Fatal("successful rollback marked the backend unavailable")
+	}
 	if want := []string{"validate", "stop", "start candidate", "stop", "start previous"}; !reflect.DeepEqual(events, want) {
 		t.Fatalf("lifecycle = %v, want %v", events, want)
+	}
+	assertLifecycleFile(t, filename, "previous configuration")
+	assertLifecycleSnapshot(t, current, pc, previous)
+	assertNoStagedConfiguration(t, filename)
+}
+
+func TestReplaceConfigurationFailedRollbackMarksBackendUnavailable(t *testing.T) {
+	filename, previous, pc := lifecycleFixture(t)
+	current := previous
+	wanted := []*models.ProxyConfig{lifecycleProxy("candidate")}
+	startErr := errors.New("backend did not become ready")
+	generator := lifecycleGenerator{generate: func(proxies []*models.ProxyConfig, staged string) ([]*models.ProxyConfig, error) {
+		return proxies, os.WriteFile(staged, []byte("candidate configuration"), 0600)
+	}}
+	runner := lifecycleRunner{
+		stop:  func() error { return nil },
+		start: func() error { return startErr },
+	}
+	err := replaceConfiguration(wanted, &current, runner, pc, filename, generator)
+	if !errors.Is(err, errBackendUnavailable) || !errors.Is(err, startErr) {
+		t.Fatalf("failed rollback error = %v, want fatal backend failure", err)
 	}
 	assertLifecycleFile(t, filename, "previous configuration")
 	assertLifecycleSnapshot(t, current, pc, previous)
