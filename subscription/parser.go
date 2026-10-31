@@ -283,8 +283,12 @@ func (p *Parser) Parse(subscriptionData string) (*ParseResult, error) {
 			return nil, fmt.Errorf("failed to read file: %v", err)
 		}
 	case "base64":
-		rawData = []byte(strings.TrimPrefix(subscriptionData, "base64://"))
-		rawData = []byte(strings.TrimPrefix(string(rawData), "data:text/plain;base64,"))
+		encoded := strings.TrimPrefix(subscriptionData, "base64://")
+		encoded = strings.TrimPrefix(encoded, "data:text/plain;base64,")
+		rawData, err = p.decodeBase64(strings.TrimSpace(encoded))
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode base64 subscription: %w", err)
+		}
 	default:
 		rawData = []byte(subscriptionData)
 	}

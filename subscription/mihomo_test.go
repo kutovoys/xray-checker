@@ -2,6 +2,7 @@ package subscription
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -100,6 +101,37 @@ func TestParseMihomoProviderAndJSON(t *testing.T) {
 			}
 			if result.Configs[0].Mihomo["password"] != "private-password" {
 				t.Fatal("credential was not retained for the core")
+			}
+		})
+	}
+}
+
+func TestParseMihomoExplicitBase64Sources(t *testing.T) {
+	useMihomoEngine(t)
+	for name, input := range map[string]string{
+		"yaml": mihomoFixture,
+		"json": `{"proxies":[{"name":"local","type":"socks5","server":"127.0.0.1","port":1080,"password":"private-password"}]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			want, err := NewParser().Parse(input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, prefix := range []string{"base64://", "data:text/plain;base64,"} {
+				for encoding, codec := range map[string]*base64.Encoding{
+					"standard": base64.StdEncoding,
+					"raw URL":  base64.RawURLEncoding,
+				} {
+					t.Run(prefix+encoding, func(t *testing.T) {
+						result, err := NewParser().Parse(prefix + codec.EncodeToString([]byte(input)))
+						if err != nil {
+							t.Fatal(err)
+						}
+						if !reflect.DeepEqual(result, want) {
+							t.Fatal("encoded source changed the parsed native proxies")
+						}
+					})
+				}
 			}
 		})
 	}
