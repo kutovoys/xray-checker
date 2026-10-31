@@ -20,12 +20,28 @@ func TestCallerThreadExitDoesNotKillCore(t *testing.T) {
 		err      error
 	}
 	started := make(chan startResult, 1)
-	go func() {
-		// Intentionally do not unlock: Go terminates this OS thread when the
-		// goroutine exits. The core must belong to its own durable thread.
-		runtime.LockOSThread()
+	startOnLockedThread := func() {
+		// Intentionally do not unlock: Go terminates this worker OS thread when
+		// the goroutine exits. The core must belong to its own durable thread.
 		threadID := syscall.Gettid()
 		started <- startResult{threadID: threadID, err: r.Start()}
+	}
+	go func() {
+		runtime.LockOSThread()
+		if syscall.Gettid() == os.Getpid() {
+			// Go parks its main OS thread instead of terminating it. Keep that
+			// thread occupied until another goroutine has locked a worker thread.
+			defer runtime.UnlockOSThread()
+			locked := make(chan struct{})
+			go func() {
+				runtime.LockOSThread()
+				close(locked)
+				startOnLockedThread()
+			}()
+			<-locked
+			return
+		}
+		startOnLockedThread()
 	}()
 	result := <-started
 	if result.err != nil {
