@@ -407,10 +407,19 @@ Mihomo child normally.
 
 #### Native Windows
 
-Install both matching Windows executables into a test directory. In PowerShell:
+Install both matching Windows executables into a test directory and create its
+`tmp` subdirectory. Before starting, restrict the NTFS permissions on both
+directories and their contents to the checker account, SYSTEM and Administrators.
+The generated `mihomo_config.yaml` in the working directory and the validation
+and runtime configurations under `TEMP` contain proxy credentials. Go's Unix
+`0600` file mode does not enforce Windows ACLs.
+
+In PowerShell, point `TEMP` and `TMP` at that protected temporary directory:
 
 ```powershell
 Set-Location 'C:\Tools\xray-checker-test'
+$env:TEMP = 'C:\Tools\xray-checker-test\tmp'
+$env:TMP = $env:TEMP
 $env:PROXY_ENGINE = 'mihomo'
 $env:MIHOMO_BINARY = 'C:\Tools\xray-checker-test\mihomo.exe'
 $env:SUBSCRIPTION_URL = 'https://subscription.example/PRIVATE_TOKEN/mihomo'
@@ -422,8 +431,10 @@ $env:METRICS_PORT = '2212'
 ```
 
 After testing, apply the same variables to the checker service using its actual
-service manager and working directory. An unrelated system Xray or Mihomo
-service does not need to be replaced.
+service manager and protected working directory. Redirect service stdout and
+stderr into a directory with the same permissions: startup and subscription-fetch
+errors can include the private subscription URL. An unrelated system Xray or
+Mihomo service does not need to be replaced.
 
 #### Docker and existing status pages
 

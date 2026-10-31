@@ -408,11 +408,19 @@ export METRICS_PORT=2212
 
 #### Нативный запуск на Windows
 
-Установите оба подходящих Windows-исполняемых файла в тестовую папку.
-В PowerShell:
+Установите оба подходящих Windows-исполняемых файла в тестовую папку и создайте
+в ней подпапку `tmp`. До запуска ограничьте права NTFS на обе папки и их
+содержимое аккаунтом чекера, SYSTEM и группой администраторов. Файл
+`mihomo_config.yaml` в рабочей папке, а также конфиги проверки и запуска ядра
+в `TEMP` содержат учётные данные прокси. Unix-режим файла `0600` в Go не задаёт
+права доступа Windows ACL.
+
+В PowerShell укажите эту защищённую временную папку в `TEMP` и `TMP`:
 
 ```powershell
 Set-Location 'C:\Tools\xray-checker-test'
+$env:TEMP = 'C:\Tools\xray-checker-test\tmp'
+$env:TMP = $env:TEMP
 $env:PROXY_ENGINE = 'mihomo'
 $env:MIHOMO_BINARY = 'C:\Tools\xray-checker-test\mihomo.exe'
 $env:SUBSCRIPTION_URL = 'https://subscription.example/PRIVATE_TOKEN/mihomo'
@@ -424,8 +432,9 @@ $env:METRICS_PORT = '2212'
 ```
 
 После проверки примените те же переменные в существующем менеджере сервиса
-чекера с его рабочей папкой. Другой системный сервис Xray или Mihomo заменять
-не требуется.
+чекера с защищённой рабочей папкой. Направьте stdout и stderr сервиса в папку
+с такими же правами: ошибки запуска и получения подписки могут содержать её
+приватный URL. Другой системный сервис Xray или Mihomo заменять не требуется.
 
 #### Docker и страницы статуса
 
