@@ -21,6 +21,11 @@ func PrepareProxyConfigs(proxies []*models.ProxyConfig) {
 // still detected as a subscription change and triggers a refresh (#124).
 func configSignature(cfg *models.ProxyConfig) string {
 	base := cfg.GenerateStableID()
+	if cfg.Mihomo != nil {
+		// Full options (including credentials) must trigger a reload, but their
+		// private fingerprint must never become a public stable ID or metric.
+		base = cfg.ConnectionSignature()
+	}
 	if len(cfg.MetricsLabels) == 0 {
 		return base
 	}

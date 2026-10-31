@@ -1,14 +1,23 @@
 package main
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"net/http"
+	"os"
+	"os/signal"
+	"path/filepath"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 	"xray-checker/checker"
 	"xray-checker/config"
 	"xray-checker/logger"
 	"xray-checker/metrics"
 	"xray-checker/models"
+	"xray-checker/probecore"
 	"xray-checker/subscription"
 	"xray-checker/web"
 	"xray-checker/xray"
@@ -19,12 +28,27 @@ import (
 )
 
 var (
-	version   = "unknown"
-	startTime = time.Now()
+	version               = "unknown"
+	startTime             = time.Now()
+	errBackendUnavailable = errors.New("probe backend could not be restored")
 )
 
 func main() {
+	if err := run(); err != nil {
+		logger.Fatal("%v", err)
+	}
+}
+
+func run() (runErr error) {
 	config.Parse(version)
+	if err := config.CLIConfig.Validate(); err != nil {
+		return err
+	}
+	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancelCore := context.WithCancelCause(signalCtx)
+	defer cancelCore(nil)
+	var cycleMu sync.Mutex
 
 	logLevel := logger.ParseLevel(config.CLIConfig.LogLevel)
 	logger.SetLevel(logLevel)
@@ -35,18 +59,20 @@ func main() {
 	}
 
 	if err := web.InitAssetLoader(config.CLIConfig.Web.CustomAssetsPath); err != nil {
-		logger.Fatal("Failed to initialize custom assets: %v", err)
+		return fmt.Errorf("initialize custom assets: %w", err)
 	}
 
-	geoManager := xray.NewGeoFileManager("")
-	if err := geoManager.EnsureGeoFiles(); err != nil {
-		logger.Fatal("Failed to ensure geo files: %v", err)
+	if !probecore.IsMihomo() {
+		geoManager := xray.NewGeoFileManager("")
+		if err := geoManager.EnsureGeoFiles(); err != nil {
+			return fmt.Errorf("ensure geo files: %w", err)
+		}
 	}
 
-	configFile := "xray_config.json"
-	proxyConfigs, err := subscription.InitializeConfiguration(configFile, version)
+	configFile := probecore.ConfigFile()
+	proxyConfigs, err := subscription.InitializeConfigurationContext(ctx, configFile, version)
 	if err != nil {
-		logger.Fatal("Error initializing configuration: %v", err)
+		return fmt.Errorf("initialize configuration: %w", err)
 	}
 
 	logger.Info("Loaded %d proxy configurations", len(*proxyConfigs))
@@ -69,14 +95,52 @@ func main() {
 		}
 	}
 
-	xrayRunner := xray.NewRunner(configFile)
-	if err := xrayRunner.Start(); err != nil {
-		logger.Fatal("Error starting Xray: %v", err)
+	coreRunner := probecore.NewRunner(configFile)
+	if ctx.Err() != nil {
+		return nil
 	}
+	if err := coreRunner.Start(); err != nil {
+		return fmt.Errorf("start probe backend: %w", err)
+	}
+	var failures <-chan error
+	if supervised, ok := coreRunner.(probecore.SupervisedRunner); ok {
+		failures = supervised.Failures()
+	}
+	var coreFailure error
+	watchDone := make(chan struct{})
+	go func() {
+		defer close(watchDone)
+		select {
+		case coreFailure = <-failures:
+			cancelCore(coreFailure)
+		case <-ctx.Done():
+		}
+	}()
+	defer func() {
+		cancelCore(nil)
+		<-watchDone
+		// Stop may discover a dead child before its watcher has run. Also retain
+		// a failure consumed concurrently with cancellation during normal cleanup.
+		if coreFailure == nil {
+			select {
+			case coreFailure = <-failures:
+			default:
+			}
+		}
+		if coreFailure != nil && signalCtx.Err() == nil {
+			runErr = errors.Join(runErr, coreFailure)
+		}
+		if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, context.Canceled) && !errors.Is(runErr, cause) {
+			runErr = errors.Join(runErr, cause)
+		}
+	}()
 
 	defer func() {
-		if err := xrayRunner.Stop(); err != nil {
-			logger.Error("Error stopping Xray: %v", err)
+		cancelCore(nil)
+		cycleMu.Lock()
+		defer cycleMu.Unlock()
+		if err := coreRunner.Stop(); err != nil {
+			logger.Error("Error stopping probe backend: %v", err)
 		}
 	}()
 
@@ -92,6 +156,7 @@ func main() {
 		config.CLIConfig.Proxy.CheckMethod,
 		config.CLIConfig.Proxy.CheckConcurrency,
 	)
+	proxyChecker.SetContext(ctx)
 
 	// The collector renders metrics from the checker's current proxy snapshot on
 	// each scrape, so custom metricsLabels (#124) can change across subscription
@@ -99,10 +164,18 @@ func main() {
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(metrics.NewCollector(config.CLIConfig.Metrics.Instance, proxyChecker))
 
-	runCheckIteration := func() {
+	// The caller holds cycleMu for this entire cycle: a core refresh must not
+	// reassign a SOCKS port while an old probe still attributes results to it.
+	checkIteration := func() {
+		if ctx.Err() != nil {
+			return
+		}
 		logger.Info("Starting proxy check iteration")
 		start := time.Now()
 		proxyChecker.CheckAllProxies()
+		if ctx.Err() != nil {
+			return
+		}
 		elapsed := time.Since(start)
 
 		// Warn if a cycle overruns the interval: with PROXY_CHECK_CONCURRENCY set,
@@ -133,11 +206,18 @@ func main() {
 			}
 		}
 	}
+	runCheckIteration := func() {
+		cycleMu.Lock()
+		defer cycleMu.Unlock()
+		checkIteration()
+	}
 
 	if config.CLIConfig.RunOnce {
 		runCheckIteration()
-		logger.Info("Check completed")
-		return
+		if ctx.Err() == nil {
+			logger.Info("Check completed")
+		}
+		return nil
 	}
 
 	checkScheduler := gocron.NewScheduler(time.UTC)
@@ -150,12 +230,13 @@ func main() {
 		runCheckIteration()
 	})
 	checkScheduler.StartAsync()
+	defer checkScheduler.Stop()
 
 	if config.CLIConfig.Subscription.Update {
 		updateScheduler := gocron.NewScheduler(time.UTC)
-		updateScheduler.Every(config.CLIConfig.Subscription.UpdateInterval).Seconds().WaitForSchedule().Do(func() {
+		updateScheduler.Every(config.CLIConfig.Subscription.UpdateInterval).Seconds().SingletonMode().WaitForSchedule().Do(func() {
 			logger.Info("Checking subscriptions for updates...")
-			newConfigs, err := subscription.ReadFromMultipleSources(config.CLIConfig.Subscription.URLs)
+			newConfigs, err := subscription.ReadFromMultipleSourcesContext(ctx, config.CLIConfig.Subscription.URLs)
 			if err != nil {
 				logger.Error("Error fetching subscriptions: %v", err)
 				return
@@ -170,14 +251,22 @@ func main() {
 				}
 			}
 
+			cycleMu.Lock()
+			defer cycleMu.Unlock()
+			if ctx.Err() != nil {
+				return
+			}
 			if !xray.IsConfigsEqual(*proxyConfigs, newConfigs) {
-				if err := updateConfiguration(newConfigs, proxyConfigs, xrayRunner, proxyChecker); err != nil {
+				if err := updateConfiguration(newConfigs, proxyConfigs, coreRunner, proxyChecker); err != nil {
 					logger.Error("Error updating configuration: %v", err)
+					if errors.Is(err, errBackendUnavailable) {
+						cancelCore(err)
+					}
 				} else {
 					// Immediately re-check the new proxy set so /metrics is repopulated
 					// right away instead of staying empty until the next scheduled check
 					// (up to PROXY_CHECK_INTERVAL), then drop series for removed proxies.
-					runCheckIteration()
+					checkIteration()
 					proxyChecker.PruneStaleResults()
 				}
 			} else {
@@ -185,11 +274,14 @@ func main() {
 			}
 		})
 		updateScheduler.StartAsync()
+		defer updateScheduler.Stop()
 	}
+	// Run before scheduler cleanup on any exit, including an HTTP bind failure.
+	defer cancelCore(nil)
 
 	mux, err := web.NewPrefixServeMux(config.CLIConfig.Metrics.BasePath)
 	if err != nil {
-		logger.Fatal("Error creating web server: %v", err)
+		return fmt.Errorf("create web server: %w", err)
 	}
 	mux.Handle("/health", web.HealthHandler())
 	mux.Handle("/static/", web.StaticHandler())
@@ -230,31 +322,59 @@ func main() {
 		mux.Handle("/", protectedHandler)
 	}
 
-	if !config.CLIConfig.RunOnce {
-		logger.Info("Server listening on %s:%s%s",
-			config.CLIConfig.Metrics.Host,
-			config.CLIConfig.Metrics.Port,
-			config.CLIConfig.Metrics.BasePath,
-		)
-		if err := http.ListenAndServe(config.CLIConfig.Metrics.Host+":"+config.CLIConfig.Metrics.Port, mux); err != nil {
-			logger.Fatal("Error starting server: %v", err)
+	logger.Info("Server listening on %s:%s%s",
+		config.CLIConfig.Metrics.Host,
+		config.CLIConfig.Metrics.Port,
+		config.CLIConfig.Metrics.BasePath,
+	)
+	server := &http.Server{Addr: config.CLIConfig.Metrics.Host + ":" + config.CLIConfig.Metrics.Port, Handler: mux}
+	serverErrors := make(chan error, 1)
+	go func() { serverErrors <- server.ListenAndServe() }()
+	select {
+	case err := <-serverErrors:
+		if !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("serve HTTP: %w", err)
+		}
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			_ = server.Close()
+			return fmt.Errorf("shut down HTTP: %w", err)
 		}
 	}
+	return nil
 }
 
 func updateConfiguration(newConfigs []*models.ProxyConfig, currentConfigs *[]*models.ProxyConfig,
-	xrayRunner *xray.Runner, proxyChecker *checker.ProxyChecker) error {
+	coreRunner probecore.Runner, proxyChecker *checker.ProxyChecker) error {
 
 	logger.Info("Subscription changed, updating configuration...")
 
 	xray.PrepareProxyConfigs(newConfigs)
 
-	configFile := "xray_config.json"
-	configGenerator := xray.NewConfigGenerator()
+	configFile := probecore.ConfigFile()
+	return replaceConfiguration(newConfigs, currentConfigs, coreRunner, proxyChecker, configFile, probecore.NewGenerator())
+}
+
+// replaceConfiguration stages a complete validated candidate before touching the
+// running backend. The caller serializes this operation with probe cycles.
+func replaceConfiguration(newConfigs []*models.ProxyConfig, currentConfigs *[]*models.ProxyConfig,
+	coreRunner probecore.Runner, proxyChecker *checker.ProxyChecker, configFile string, configGenerator probecore.Generator) error {
+	staged, err := os.CreateTemp(filepath.Dir(configFile), ".checker-config-*")
+	if err != nil {
+		return fmt.Errorf("stage configuration: %w", err)
+	}
+	stagedPath := staged.Name()
+	if err := staged.Close(); err != nil {
+		_ = os.Remove(stagedPath)
+		return err
+	}
+	defer os.Remove(stagedPath)
 	validProxies, err := configGenerator.GenerateValidatedConfig(
 		newConfigs,
 		config.CLIConfig.Xray.StartPort,
-		configFile,
+		stagedPath,
 		config.CLIConfig.Xray.LogLevel,
 	)
 	if err != nil {
@@ -262,12 +382,29 @@ func updateConfiguration(newConfigs []*models.ProxyConfig, currentConfigs *[]*mo
 	}
 	newConfigs = validProxies
 
-	if err := xrayRunner.Stop(); err != nil {
+	previous, err := os.ReadFile(configFile)
+	if err != nil {
+		return fmt.Errorf("read previous configuration: %w", err)
+	}
+	if err := coreRunner.Stop(); err != nil {
 		return err
 	}
 
-	if err := xrayRunner.Start(); err != nil {
-		return err
+	rollback := func(cause error) error {
+		_ = coreRunner.Stop()
+		if err := os.WriteFile(configFile, previous, 0600); err != nil {
+			return errors.Join(errBackendUnavailable, cause, fmt.Errorf("restore previous configuration: %w", err))
+		}
+		if err := coreRunner.Start(); err != nil {
+			return errors.Join(errBackendUnavailable, cause, fmt.Errorf("restart previous backend: %w", err))
+		}
+		return cause
+	}
+	if err := os.Rename(stagedPath, configFile); err != nil {
+		return rollback(fmt.Errorf("install configuration: %w", err))
+	}
+	if err := coreRunner.Start(); err != nil {
+		return rollback(fmt.Errorf("start updated backend: %w", err))
 	}
 
 	proxyChecker.UpdateProxies(newConfigs)

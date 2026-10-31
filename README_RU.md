@@ -22,6 +22,7 @@ Xray Checker - это инструмент для мониторинга дос�
 ## 🚀 Основные возможности
 
 - 🔍 Мониторинг работоспособности Xray-прокси серверов (VLESS, VMess, Trojan, Shadowsocks)
+- 🧪 Опциональный движок Mihomo для нативных подписок и проверок h2mux
 - 🔄 Автоматическое обновление конфигурации из подписки (поддержка нескольких подписок)
 - 📊 Экспорт метрик в формате Prometheus с поддержкой Pushgateway
 - 🌐 REST API с документацией OpenAPI/Swagger
@@ -37,6 +38,7 @@ Xray Checker - это инструмент для мониторинга дос�
   - Share-ссылки (vless://, vmess://, trojan://, ss://)
   - JSON-файлы конфигурации
   - Папки с конфигурациями
+  - Mihomo YAML со списком `proxies` при `PROXY_ENGINE=mihomo`
 
 Полный список возможностей доступен в [документации](https://xray-checker.kutovoy.dev/ru/intro/features).
 
@@ -64,6 +66,40 @@ services:
 ```
 
 Подробная документация по установке и настройке доступна на [xray-checker.kutovoy.dev](https://xray-checker.kutovoy.dev/ru/intro/quick-start)
+
+### Подписки Mihomo и h2mux
+
+По умолчанию используется встроенный Xray. Чтобы проверять подписку Mihomo с её
+нативными параметрами `smux` и REALITY, установите актуальный
+[релиз Mihomo](https://github.com/MetaCubeX/mihomo/releases), зафиксируйте его
+версию в конфигурации развёртывания и укажите исполняемый файл:
+
+```sh
+export PROXY_ENGINE=mihomo
+export MIHOMO_BINARY=/usr/local/bin/mihomo
+export SUBSCRIPTION_URL='https://subscription.example/PRIVATE_TOKEN/mihomo'
+export SUBSCRIPTION_JSON_FORMAT=false
+./xray-checker
+```
+
+Эквивалентные параметры CLI: `--proxy-engine=mihomo` и
+`--mihomo-binary=/usr/local/bin/mihomo`. По умолчанию исполняемый файл `mihomo`
+ищется в `PATH`. Mihomo устанавливается отдельно: чекер и его Docker-образ
+не включают это ядро и не скачивают его. Для Docker нужно предоставить
+совместимый исполняемый файл.
+
+Этот режим читает встроенный список `proxies` из полной YAML-подписки Mihomo или
+документа провайдера и проверяет каждый прокси через отдельный локальный SOCKS-
+порт. Параметры h2mux сохраняются при проверке. Правила маршрутизации, группы,
+TUN, DNS и контроллер из подписки не импортируются; внешние провайдеры и цепочки
+`dialer-proxy` не поддерживаются. `SUBSCRIPTION_JSON_FORMAT=true` предназначен
+для Xray и несовместим с режимом Mihomo.
+
+Формат API страницы статуса и метрик Prometheus сохраняется. При смене движка
+создаются новые stable ID и серии метрик; история автоматически не переносится.
+Подробности для
+Windows, OpenWrt ARM64, Docker и заголовков подписки приведены в
+[руководстве по Mihomo](docs/src/content/docs/ru/configuration/subscription.md#10-подписки-mihomo-и-h2mux).
 
 ## 📈 Статистика проекта
 

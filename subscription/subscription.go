@@ -1,6 +1,7 @@
 package subscription
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"sort"
@@ -8,6 +9,7 @@ import (
 	"xray-checker/config"
 	"xray-checker/logger"
 	"xray-checker/models"
+	"xray-checker/probecore"
 	"xray-checker/xray"
 )
 
@@ -36,7 +38,11 @@ type subscriptionResult struct {
 }
 
 func InitializeConfiguration(configFile string, version string) (*[]*models.ProxyConfig, error) {
-	configs, err := ReadFromMultipleSources(config.CLIConfig.Subscription.URLs)
+	return InitializeConfigurationContext(context.Background(), configFile, version)
+}
+
+func InitializeConfigurationContext(ctx context.Context, configFile string, version string) (*[]*models.ProxyConfig, error) {
+	configs, err := ReadFromMultipleSourcesContext(ctx, config.CLIConfig.Subscription.URLs)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +58,7 @@ func InitializeConfiguration(configFile string, version string) (*[]*models.Prox
 
 	xray.PrepareProxyConfigs(proxyConfigs)
 
-	configGenerator := xray.NewConfigGenerator()
+	configGenerator := probecore.NewGenerator()
 	validProxies, err := configGenerator.GenerateValidatedConfig(
 		proxyConfigs,
 		config.CLIConfig.Xray.StartPort,
@@ -68,12 +74,16 @@ func InitializeConfiguration(configFile string, version string) (*[]*models.Prox
 }
 
 func ReadFromMultipleSources(urls []string) ([]*models.ProxyConfig, error) {
+	return ReadFromMultipleSourcesContext(context.Background(), urls)
+}
+
+func ReadFromMultipleSourcesContext(ctx context.Context, urls []string) ([]*models.ProxyConfig, error) {
 	if len(urls) == 0 {
 		return nil, fmt.Errorf("no subscription URLs provided")
 	}
 
 	if len(urls) == 1 {
-		configs, name, err := ReadFromSource(urls[0])
+		configs, name, err := ReadFromSourceContext(ctx, urls[0])
 		if err != nil {
 			return nil, err
 		}
@@ -96,7 +106,7 @@ func ReadFromMultipleSources(urls []string) ([]*models.ProxyConfig, error) {
 		wg.Add(1)
 		go func(u string) {
 			defer wg.Done()
-			configs, name, err := ReadFromSource(u)
+			configs, name, err := ReadFromSourceContext(ctx, u)
 			for _, cfg := range configs {
 				cfg.SubName = name
 			}
@@ -150,7 +160,11 @@ func ReadFromMultipleSources(urls []string) ([]*models.ProxyConfig, error) {
 }
 
 func ReadFromSource(source string) ([]*models.ProxyConfig, string, error) {
-	parser := NewParser()
+	return ReadFromSourceContext(context.Background(), source)
+}
+
+func ReadFromSourceContext(ctx context.Context, source string) ([]*models.ProxyConfig, string, error) {
+	parser := NewParserWithContext(ctx)
 	result, err := parser.Parse(source)
 	if err != nil {
 		return nil, "", err

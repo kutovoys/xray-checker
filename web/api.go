@@ -110,7 +110,10 @@ func toProxyInfo(proxy *models.ProxyConfig, online bool, latency time.Duration, 
 		LastCheck:     lastCheck,
 		MetricsLabels: proxy.MetricsLabels,
 	}
-	if includeDetails {
+	// Mihomo definitions can contain credentials in arbitrary nested options
+	// (including custom headers). They are neither Xray outbounds nor safe to
+	// expose through the Xray-specific sanitizer, so omit this optional field.
+	if includeDetails && proxy.Mihomo == nil {
 		outbound := xray.NewConfigGenerator().GenerateProxyOutbound(proxy)
 		info.GeneratedConfig = sanitizeGeneratedConfig(outbound)
 	}

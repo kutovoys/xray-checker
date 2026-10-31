@@ -2,10 +2,56 @@ package subscription
 
 import (
 	"encoding/base64"
+	"errors"
+	"reflect"
+	"strings"
 	"testing"
 
+	"xray-checker/config"
 	"xray-checker/models"
 )
+
+func TestParseXrayBase64Sources(t *testing.T) {
+	previous := config.CLIConfig
+	t.Cleanup(func() { config.CLIConfig = previous })
+	config.CLIConfig.Proxy.Engine = "xray"
+	const input = "vless://6d3d5258-b767-4bb2-96fd-5b8b1125579b@node.example.com:443?encryption=none&type=tcp#sample"
+	want, err := NewParser().Parse(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, prefix := range []string{"", "base64://", "data:text/plain;base64,"} {
+		t.Run(prefix, func(t *testing.T) {
+			result, err := NewParser().Parse(prefix + base64.StdEncoding.EncodeToString([]byte(input)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(result, want) {
+				t.Fatal("encoded source changed the parsed Xray proxies")
+			}
+		})
+	}
+}
+
+func TestParseExplicitBase64RejectsMalformedEncoding(t *testing.T) {
+	previous := config.CLIConfig
+	t.Cleanup(func() { config.CLIConfig = previous })
+	for _, engine := range []string{"xray", "mihomo"} {
+		config.CLIConfig.Proxy.Engine = engine
+		for _, prefix := range []string{"base64://", "data:text/plain;base64,"} {
+			t.Run(engine+"/"+prefix, func(t *testing.T) {
+				result, err := NewParser().Parse(prefix + "do-not-print-me!")
+				var encodingError base64.CorruptInputError
+				if !errors.As(err, &encodingError) || result != nil {
+					t.Fatalf("expected a Base64 decoding error, got %v", err)
+				}
+				if strings.Contains(err.Error(), "do-not-print-me") {
+					t.Fatal("error disclosed a subscription value")
+				}
+			})
+		}
+	}
+}
 
 func node(name, server string, port int) *models.ProxyConfig {
 	return &models.ProxyConfig{Name: name, Server: server, Port: port, Protocol: "vless"}

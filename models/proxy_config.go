@@ -3,6 +3,7 @@ package models
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -49,6 +50,10 @@ type ProxyConfig struct {
 	SubName              string
 	GroupName            string
 
+	// Mihomo retains the original proxy definition for execution by Mihomo. It
+	// can contain credentials and must never be serialized into the public API.
+	Mihomo map[string]any `json:"-"`
+
 	// MetricsLabels holds operator-defined static labels parsed from a JSON
 	// outbound's "metricsLabels" object. They are exported as extra Prometheus
 	// labels and in the API, but are deliberately NOT part of GenerateStableID
@@ -84,6 +89,11 @@ func (pc *ProxyConfig) Validate() error {
 	}
 	if pc.Port <= 0 || pc.Port > 65535 {
 		return fmt.Errorf("invalid port number: %d", pc.Port)
+	}
+	if pc.Mihomo != nil {
+		// The external Mihomo core validates protocol-specific options. Applying
+		// Xray's schema here would reject or lose valid Mihomo-only features.
+		return nil
 	}
 
 	switch pc.Protocol {
@@ -180,8 +190,54 @@ func (pc *ProxyConfig) GenerateStableID() string {
 	write("mode", pc.Mode)
 	write("rawXhttp", pc.RawXhttpSettings)
 	write("rawKcp", pc.RawKcpSettings)
+	if pc.Mihomo != nil {
+		write("engine", "mihomo")
+		// Keep the public identifier independent of weak credentials. Only
+		// explicitly public Mihomo connection options supplement the common
+		// fields above; complete options are compared privately for reloads.
+		publicOptions := make(map[string]any)
+		for _, key := range []string{"udp", "skip-cert-verify", "ip-version", "packet-encoding"} {
+			if value, ok := pc.Mihomo[key]; ok {
+				publicOptions[key] = value
+			}
+		}
+		if smux, ok := pc.Mihomo["smux"].(map[string]any); ok {
+			publicMux := make(map[string]any)
+			for _, key := range []string{"enabled", "protocol", "padding", "min-streams", "max-streams", "max-connections", "only-tcp"} {
+				if value, ok := smux[key]; ok {
+					publicMux[key] = value
+				}
+			}
+			publicOptions["smux"] = publicMux
+		}
+		if reality, ok := pc.Mihomo["reality-opts"].(map[string]any); ok {
+			if value, ok := reality["support-x25519mlkem768"]; ok {
+				publicOptions["support-x25519mlkem768"] = value
+			}
+		}
+		encoded, _ := json.Marshal(publicOptions) // Parser permits JSON-compatible values only.
+		write("mihomo", string(encoded))
+	}
 
 	return hex.EncodeToString(h.Sum(nil))[:16]
+}
+
+// ConnectionSignature is a private reload fingerprint. Unlike the public
+// StableID, it includes credentials so rotations take effect. Never publish or
+// log this digest: a hash of a weak password is not a safe public identifier.
+func (pc *ProxyConfig) ConnectionSignature() string {
+	if pc.Mihomo == nil {
+		return pc.GenerateStableID()
+	}
+	encoded, _ := json.Marshal(struct {
+		Definition map[string]any
+		Name       string
+		SubName    string
+		Server     string
+		Port       int
+	}{pc.Mihomo, pc.Name, pc.SubName, pc.Server, pc.Port})
+	digest := sha256.Sum256(encoded)
+	return hex.EncodeToString(digest[:])
 }
 
 // AssignStableIDs sets the final StableID for every proxy in the set. Proxies with
@@ -275,6 +331,13 @@ func (pc *ProxyConfig) DebugString() string {
 	sb.WriteString(fmt.Sprintf("  [%d] %s\n", pc.Index, pc.Name))
 	sb.WriteString(fmt.Sprintf("      Protocol: %s\n", pc.Protocol))
 	sb.WriteString(fmt.Sprintf("      Server:   %s:%d\n", pc.Server, pc.Port))
+	if pc.Mihomo != nil {
+		// Raw definitions may contain credentials in protocol-specific options
+		// and headers; avoid dumping either those definitions or their UUIDs.
+		sb.WriteString("      Engine:   Mihomo\n")
+		sb.WriteString(fmt.Sprintf("      StableID: %s\n", pc.StableID))
+		return sb.String()
+	}
 
 	switch pc.Protocol {
 	case "vless", "vmess":

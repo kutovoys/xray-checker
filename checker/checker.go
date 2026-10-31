@@ -16,6 +16,7 @@ import (
 )
 
 type ProxyChecker struct {
+	ctx              context.Context
 	proxies          []*models.ProxyConfig
 	startPort        int
 	ipCheck          string
@@ -45,6 +46,7 @@ type proxyResult struct {
 
 func NewProxyChecker(proxies []*models.ProxyConfig, startPort int, ipCheckURL string, ipCheckTimeout int, genMethodURL string, downloadURL string, downloadTimeout int, downloadMinSize int64, checkMethod string, checkConcurrency int) *ProxyChecker {
 	return &ProxyChecker{
+		ctx:       context.Background(),
 		proxies:   proxies,
 		startPort: startPort,
 		ipCheck:   ipCheckURL,
@@ -61,12 +63,22 @@ func NewProxyChecker(proxies []*models.ProxyConfig, startPort int, ipCheckURL st
 	}
 }
 
+// SetContext installs the process lifecycle context before checks are started.
+// Canceling it aborts in-flight HTTP probes so the backend can shut down promptly.
+func (pc *ProxyChecker) SetContext(ctx context.Context) {
+	pc.ctx = ctx
+}
+
 func (pc *ProxyChecker) GetCurrentIP() (string, error) {
 	if pc.ipInitialized && pc.currentIP != "" {
 		return pc.currentIP, nil
 	}
 
-	resp, err := pc.httpClient.Get(pc.ipCheck)
+	req, err := http.NewRequestWithContext(pc.ctx, http.MethodGet, pc.ipCheck, nil)
+	if err != nil {
+		return "", fmt.Errorf("error building current IP request: %v", err)
+	}
+	resp, err := pc.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("error getting current IP: %v", err)
 	}
@@ -190,7 +202,7 @@ func (pc *ProxyChecker) checkByIP(client *http.Client) (bool, string, time.Durat
 			ttfb = time.Since(start)
 		},
 	}
-	req = req.WithContext(httptrace.WithClientTrace(context.Background(), trace))
+	req = req.WithContext(httptrace.WithClientTrace(pc.ctx, trace))
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -221,7 +233,7 @@ func (pc *ProxyChecker) checkByGen(client *http.Client) (bool, string, time.Dura
 			ttfb = time.Since(start)
 		},
 	}
-	req = req.WithContext(httptrace.WithClientTrace(context.Background(), trace))
+	req = req.WithContext(httptrace.WithClientTrace(pc.ctx, trace))
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -250,7 +262,7 @@ func (pc *ProxyChecker) checkByDownload(client *http.Client) (bool, string, time
 			ttfb = time.Since(start)
 		},
 	}
-	req = req.WithContext(httptrace.WithClientTrace(context.Background(), trace))
+	req = req.WithContext(httptrace.WithClientTrace(pc.ctx, trace))
 
 	downloadClient := &http.Client{
 		Transport: client.Transport,

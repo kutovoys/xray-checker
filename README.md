@@ -32,6 +32,7 @@ Xray Checker is a tool for monitoring proxy server availability with support for
 ## 🚀 Key Features
 
 - 🔍 Monitoring of Xray proxy servers (VLESS, VMess, Trojan, Shadowsocks)
+- 🧪 Optional Mihomo backend for native Mihomo subscriptions and h2mux probes
 - 🔄 Automatic configuration updates from subscription (multiple subscriptions supported)
 - 📊 Prometheus metrics export with Pushgateway support
 - 🌐 REST API with OpenAPI/Swagger documentation
@@ -47,6 +48,7 @@ Xray Checker is a tool for monitoring proxy server availability with support for
   - Share links (vless://, vmess://, trojan://, ss://)
   - JSON configuration files
   - Folders with configurations
+  - Mihomo YAML with inline `proxies` when `PROXY_ENGINE=mihomo`
 
 Full list of features available in the [documentation](https://xray-checker.kutovoy.dev/intro/features).
 
@@ -74,6 +76,40 @@ services:
 ```
 
 Detailed installation and configuration documentation is available at [xray-checker.kutovoy.dev](https://xray-checker.kutovoy.dev/intro/quick-start)
+
+### Mihomo subscriptions and h2mux
+
+The default backend remains embedded Xray. To check a Mihomo subscription using
+its native `smux` and REALITY options, install a maintained
+[Mihomo release](https://github.com/MetaCubeX/mihomo/releases), pin the version in
+your deployment, and select its executable:
+
+```sh
+export PROXY_ENGINE=mihomo
+export MIHOMO_BINARY=/usr/local/bin/mihomo
+export SUBSCRIPTION_URL='https://subscription.example/PRIVATE_TOKEN/mihomo'
+export SUBSCRIPTION_JSON_FORMAT=false
+./xray-checker
+```
+
+Equivalent CLI options are `--proxy-engine=mihomo` and
+`--mihomo-binary=/usr/local/bin/mihomo`. The default binary name is `mihomo` on
+`PATH`. Mihomo is installed separately: the checker and Docker image neither
+bundle nor download it. Docker deployments must supply a matching executable.
+
+This mode reads inline `proxies` from a full Mihomo YAML subscription or a
+proxy-provider document and runs each proxy through its own loopback SOCKS
+listener. It preserves h2mux settings instead of converting the subscription to
+ordinary Xray outbounds. Subscription routing, groups, TUN, DNS and controller
+settings are not imported; external providers and `dialer-proxy` chains are not
+supported. `SUBSCRIPTION_JSON_FORMAT=true` is an Xray option and conflicts with
+Mihomo mode.
+
+The status-page API and Prometheus metrics remain compatible. Changing backends
+creates new stable IDs and metric series; existing status history is not
+automatically migrated. See the
+[Mihomo setup guide](docs/src/content/docs/configuration/subscription.md#10-mihomo-subscriptions-and-h2mux)
+for Windows, OpenWrt ARM64, Docker and subscription-header details.
 
 ## 📈 Project Statistics
 

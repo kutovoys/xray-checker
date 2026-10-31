@@ -32,6 +32,7 @@ type CLI struct {
 	} `embed:"" prefix:""`
 
 	Proxy struct {
+		Engine           string `name:"proxy-engine" help:"Probe backend: embedded Xray or an external Mihomo executable" default:"xray" enum:"xray,mihomo" env:"PROXY_ENGINE"`
 		CheckInterval    int    `name:"proxy-check-interval" help:"Interval for proxy checks in seconds" default:"300" env:"PROXY_CHECK_INTERVAL"`
 		CheckConcurrency int    `name:"proxy-check-concurrency" help:"Max proxies checked in parallel per cycle (0 = unlimited)" default:"0" env:"PROXY_CHECK_CONCURRENCY"`
 		CheckMethod      string `name:"proxy-check-method" help:"Method for checking proxy, ip, status or download" default:"ip" env:"PROXY_CHECK_METHOD"`
@@ -48,6 +49,10 @@ type CLI struct {
 	Xray struct {
 		StartPort int    `name:"xray-start-port" help:"Start port for proxy configuration" default:"10000" env:"XRAY_START_PORT"`
 		LogLevel  string `name:"xray-log-level" help:"Xray log level (debug|info|warning|error|none)" default:"none" env:"XRAY_LOG_LEVEL"`
+	} `embed:"" prefix:""`
+
+	Mihomo struct {
+		Binary string `name:"mihomo-binary" help:"Mihomo executable used when --proxy-engine=mihomo" default:"mihomo" env:"MIHOMO_BINARY"`
 	} `embed:"" prefix:""`
 
 	Metrics struct {
@@ -75,6 +80,20 @@ type CLI struct {
 }
 
 func (c *CLI) Validate() error {
+	if c.Proxy.Engine != "" && c.Proxy.Engine != "xray" && c.Proxy.Engine != "mihomo" {
+		return fmt.Errorf("--proxy-engine must be xray or mihomo")
+	}
+	if c.Proxy.Engine == "mihomo" {
+		if c.Proxy.ResolveDomains {
+			return fmt.Errorf("--proxy-resolve-domains is only supported by the Xray backend; use Mihomo's per-proxy ip-version option instead")
+		}
+		if c.Subscription.JSONFormat {
+			return fmt.Errorf("--subscription-json-format requests Xray JSON and cannot be used with --proxy-engine=mihomo; use a Mihomo subscription")
+		}
+		if c.Mihomo.Binary == "" {
+			return fmt.Errorf("--mihomo-binary is required for the Mihomo backend")
+		}
+	}
 	if c.Web.Public && !c.Metrics.Protected {
 		return fmt.Errorf("--web-public requires --metrics-protected to be enabled")
 	}
