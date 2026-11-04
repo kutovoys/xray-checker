@@ -158,6 +158,7 @@ type libXraySockopt struct {
 type libXrayFinalMask struct {
 	QuicParams *libXrayQuicParams `json:"quicParams"`
 	Udp        []libXrayMask      `json:"udp"`
+	Tcp        json.RawMessage    `json:"tcp"`
 }
 
 type libXrayQuicParams struct {
@@ -1407,6 +1408,12 @@ func (p *Parser) convertOutbound(raw json.RawMessage, index int, originalData ma
 						logger.Debug("Failed to parse salamander settings: %v", err)
 					}
 				}
+			}
+			// TCP masks (fragment, sudoku, header-custom, ...) are passed through
+			// to the generated config as-is: without them the server sees a bare
+			// stream and drops the connection.
+			if tcp := strings.TrimSpace(string(finalMask.Tcp)); tcp != "" && tcp != "null" && tcp != "[]" {
+				pc.RawFinalMaskTcp = tcp
 			}
 		}
 	}

@@ -2,6 +2,8 @@ package subscription
 
 import (
 	"encoding/base64"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"xray-checker/models"
@@ -289,5 +291,50 @@ func TestConvertOutboundJSON_MetricsLabels(t *testing.T) {
 	pc3, _ := p.convertOutbound([]byte(`{"protocol":"trojan","tag":"p","settings":{"servers":[{"address":"2.2.2.2","port":443,"password":"pw"}]}}`), 0, nil)
 	if pc3.MetricsLabels != nil {
 		t.Errorf("expected nil MetricsLabels, got %v", pc3.MetricsLabels)
+	}
+}
+
+func TestConvertOutboundJSON_FinalMaskTcp(t *testing.T) {
+	p := NewParser()
+
+	const base = `{
+		"protocol":"vless","tag":"proxy",
+		"settings":{"vnext":[{"address":"1.1.1.1","port":443,"users":[{"id":"00000000-0000-0000-0000-000000000000","encryption":"none"}]}]},
+		"streamSettings":{"network":"tcp","security":"tls","tlsSettings":{"serverName":"example.com"}%s}
+	}`
+	withMask := []byte(strings.Replace(base, "%s",
+		`,"finalmask":{"tcp":[{"type":"fragment","settings":{"packets":"tlshello","length":"100-200","delay":"10-20"}}]}`, 1))
+
+	pc, err := p.convertOutbound(withMask, 0, nil)
+	if err != nil || pc == nil {
+		t.Fatalf("convert err=%v pc=%v", err, pc)
+	}
+	var masks []struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal([]byte(pc.RawFinalMaskTcp), &masks); err != nil {
+		t.Fatalf("RawFinalMaskTcp is not a JSON array: %q (%v)", pc.RawFinalMaskTcp, err)
+	}
+	if len(masks) != 1 || masks[0].Type != "fragment" {
+		t.Errorf("finalmask.tcp not preserved: %q", pc.RawFinalMaskTcp)
+	}
+
+	// No mask / empty list -> nothing to pass through.
+	for name, extra := range map[string]string{
+		"absent":     "",
+		"empty list": `,"finalmask":{"tcp":[]}`,
+		"null":       `,"finalmask":{"tcp":null}`,
+	} {
+		plain, err := p.convertOutbound([]byte(strings.Replace(base, "%s", extra, 1)), 0, nil)
+		if err != nil || plain == nil {
+			t.Fatalf("%s: convert err=%v", name, err)
+		}
+		if plain.RawFinalMaskTcp != "" {
+			t.Errorf("%s: expected empty RawFinalMaskTcp, got %q", name, plain.RawFinalMaskTcp)
+		}
+		// Masks must NOT affect the connection-identity hash (stableID).
+		if plain.GenerateStableID() != pc.GenerateStableID() {
+			t.Errorf("%s: finalmask.tcp must not change stableID", name)
+		}
 	}
 }

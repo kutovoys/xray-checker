@@ -287,3 +287,33 @@ func TestGenerateWireGuardConfigBuild(t *testing.T) {
 		t.Error("expected a wireguard outbound")
 	}
 }
+
+func TestGenerateConfigKeepsFinalMaskTcp(t *testing.T) {
+	// TCP masks from the subscription must reach the generated outbound: the
+	// server expects the masked stream and drops a bare one.
+	proxy := &models.ProxyConfig{
+		Protocol:        "vless",
+		Server:          "example.com",
+		Port:            443,
+		Name:            "vless-fragment",
+		UUID:            "00000000-0000-0000-0000-000000000000",
+		Type:            "tcp",
+		Security:        "tls",
+		SNI:             "example.com",
+		RawFinalMaskTcp: `[{"type":"fragment","settings":{"packets":"tlshello","length":"100-200","delay":"10-20"}}]`,
+		Index:           0,
+	}
+	ss := streamSettingsOf(t, buildsWithXrayCore(t, []*models.ProxyConfig{proxy}))
+
+	var finalMask struct {
+		Tcp []struct {
+			Type string `json:"type"`
+		} `json:"tcp"`
+	}
+	if err := json.Unmarshal(ss["finalmask"], &finalMask); err != nil {
+		t.Fatalf("finalmask missing or invalid: %s (%v)", ss["finalmask"], err)
+	}
+	if len(finalMask.Tcp) != 1 || finalMask.Tcp[0].Type != "fragment" {
+		t.Errorf("finalmask.tcp not passed through: %s", ss["finalmask"])
+	}
+}

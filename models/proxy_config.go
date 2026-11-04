@@ -46,8 +46,11 @@ type ProxyConfig struct {
 	StableID             string
 	RawXhttpSettings     string
 	RawKcpSettings       string
-	SubName              string
-	GroupName            string
+	// RawFinalMaskTcp is streamSettings.finalmask.tcp as received (JSON array).
+	// Not part of GenerateStableID, so adding masks to a config keeps its history.
+	RawFinalMaskTcp string
+	SubName         string
+	GroupName       string
 
 	// MetricsLabels holds operator-defined static labels parsed from a JSON
 	// outbound's "metricsLabels" object. They are exported as extra Prometheus
