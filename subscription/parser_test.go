@@ -207,6 +207,33 @@ func TestParseWireGuardURI(t *testing.T) {
 	}
 }
 
+func TestConvertOutboundJSON_RealityPasswordAlias(t *testing.T) {
+	// Issue #188: password-mode REALITY subscriptions carry the server
+	// public key in realitySettings.password (no publicKey field). xray-core
+	// treats the two as aliases, so the parser must fall back to "password".
+	p := NewParser()
+	raw := []byte(`{
+		"protocol":"vless","tag":"proxy",
+		"settings":{"vnext":[{"address":"example.com","port":443,
+			"users":[{"id":"00000000-0000-0000-0000-000000000000","encryption":"none","flow":"xtls-rprx-vision"}]}]},
+		"streamSettings":{"network":"tcp","security":"reality",
+			"realitySettings":{"serverName":"example.com","fingerprint":"chrome",
+				"shortId":"64d5300f209d1abb","password":"jnsDTya4elAlV-czGFJbvOHJFdXWn7MGGwmKzZ_hoTQ"}}}`)
+	pc, err := p.convertOutbound(raw, 0, nil)
+	if err != nil || pc == nil {
+		t.Fatalf("reality convert err=%v pc=%v", err, pc)
+	}
+	if pc.Security != "reality" {
+		t.Errorf("security=%q, want reality", pc.Security)
+	}
+	if pc.PublicKey != "jnsDTya4elAlV-czGFJbvOHJFdXWn7MGGwmKzZ_hoTQ" {
+		t.Errorf("publicKey=%q, want the password value as alias", pc.PublicKey)
+	}
+	if pc.ShortID != "64d5300f209d1abb" || pc.SNI != "example.com" {
+		t.Errorf("shortId=%q sni=%q", pc.ShortID, pc.SNI)
+	}
+}
+
 func TestConvertOutboundJSON_WireGuardAndSocksHttp(t *testing.T) {
 	p := NewParser()
 
