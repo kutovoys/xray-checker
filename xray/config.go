@@ -513,6 +513,15 @@ func (g *ConfigGenerator) generateStreamSettings(proxy *models.ProxyConfig) map[
 		}
 	}
 
+	if proxy.RawFinalMaskTcp != "" {
+		finalMask, _ := ss["finalmask"].(map[string]interface{})
+		if finalMask == nil {
+			finalMask = map[string]interface{}{}
+		}
+		finalMask["tcp"] = json.RawMessage(proxy.RawFinalMaskTcp)
+		ss["finalmask"] = finalMask
+	}
+
 	return ss
 }
 
